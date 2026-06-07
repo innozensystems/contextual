@@ -22,8 +22,8 @@ android/fastlane/report.xml
 
 # Proxy
 proxy/venv/
-proxy/__pycache__/
-proxy/*.pyc
+proxy/**/__pycache__/
+proxy/**/*.pyc
 proxy/.env
 
 # General

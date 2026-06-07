@@ -104,6 +104,7 @@ class RouteResponse(BaseModel):
     legs: list[RouteLeg]
     waypoints_order: list[int]
     geometry: Optional[str] = None  # encoded polyline
+    cached: bool = False
 
 
 # ========================
@@ -270,6 +271,7 @@ async def route(req: RouteRequest, x_device_id: Optional[str] = Header(default=N
         cached = await r.get(cache_key)
         if cached:
             data = json.loads(cached)
+            data["cached"] = True
             return RouteResponse(**data)
     except Exception:
         pass  # Redis unavailable; fall through to Mapbox
@@ -283,14 +285,20 @@ async def route(req: RouteRequest, x_device_id: Optional[str] = Header(default=N
     mb_data = resp.json()
 
     # Parse trip data (optimized-trips returns trips[], directions returns routes[])
-    if req.optimize and "trips" in mb_data:
+    if req.optimize and mb_data.get("trips"):
         trip = mb_data["trips"][0]
         legs_data = trip.get("legs", [])
-        waypoints_order = [wp["waypoint_index"] for wp in mb_data.get("waypoints", [])]
-    else:
-        route_obj = mb_data.get("routes", [{}])[0]
+        waypoints_order = [
+            wp.get("waypoint_index", i) for i, wp in enumerate(mb_data.get("waypoints", []))
+        ]
+    elif mb_data.get("routes"):
+        route_obj = mb_data["routes"][0]
         trip = route_obj
         legs_data = route_obj.get("legs", [])
+        waypoints_order = list(range(len(req.waypoints)))
+    else:
+        trip = {}
+        legs_data = []
         waypoints_order = list(range(len(req.waypoints)))
 
     legs = [
@@ -308,6 +316,7 @@ async def route(req: RouteRequest, x_device_id: Optional[str] = Header(default=N
         legs=legs,
         waypoints_order=waypoints_order,
         geometry=trip.get("geometry"),
+        cached=False,
     )
 
     try:
