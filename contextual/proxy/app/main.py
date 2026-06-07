@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
     require_redis_tls: bool = Field(default=False, alias="REQUIRE_REDIS_TLS")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    proxy_api_key: str = Field(default="", alias="PROXY_API_KEY")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -214,6 +215,15 @@ async def rate_limit_dependency(request: Request):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
 
 
+async def api_key_dependency(request: Request):
+    """Reject requests without a valid x-api-key header when PROXY_API_KEY is configured."""
+    if not settings.proxy_api_key:
+        return  # dev mode — no key required
+    api_key = request.headers.get("x-api-key")
+    if api_key != settings.proxy_api_key:
+        raise HTTPException(status_code=401, detail="Missing or invalid x-api-key header.")
+
+
 # Redis client (initialized on first use)
 _redis_client: Optional[redis.Redis] = None
 
@@ -294,6 +304,7 @@ async def geocode(
     req: GeocodeRequest,
     x_device_id: Optional[str] = Header(default=None),
     _rate_limit=Depends(rate_limit_dependency),
+    _api_key=Depends(api_key_dependency),
 ):
     """
     Geocode an address or place name via Mapbox.
@@ -379,6 +390,7 @@ async def reverse_geocode(
     lng: float = Query(..., ge=-180, le=180),
     x_device_id: Optional[str] = Header(default=None),
     _rate_limit=Depends(rate_limit_dependency),
+    _api_key=Depends(api_key_dependency),
 ):
     """Reverse geocode a lat/lng coordinate via Mapbox."""
     if not settings.mapbox_token:
@@ -452,6 +464,7 @@ async def route(
     req: RouteRequest,
     x_device_id: Optional[str] = Header(default=None),
     _rate_limit=Depends(rate_limit_dependency),
+    _api_key=Depends(api_key_dependency),
 ):
     """
     Get optimized driving route through waypoints.

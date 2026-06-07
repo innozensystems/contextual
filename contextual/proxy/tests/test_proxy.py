@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app, settings
 
-client = TestClient(app, headers={"x-device-id": "test-device-12345"})
+client = TestClient(
+    app, headers={"x-device-id": "test-device-12345", "x-api-key": "test-api-key"}
+)
 
 
 def test_health():
@@ -37,6 +39,26 @@ def test_route_missing_token():
         },
     )
     assert response.status_code == 503
+
+
+def test_api_key_rejected_when_configured():
+    """When PROXY_API_KEY is set, missing/invalid x-api-key returns 401."""
+    original_key = settings.proxy_api_key
+    settings.proxy_api_key = "secret-key"
+    try:
+        # Missing key
+        client_no_key = TestClient(app, headers={"x-device-id": "test-device-12345"})
+        response = client_no_key.post("/geocode", json={"query": "Whole Foods"})
+        assert response.status_code == 401
+
+        # Invalid key
+        client_bad_key = TestClient(
+            app, headers={"x-device-id": "test-device-12345", "x-api-key": "wrong-key"}
+        )
+        response = client_bad_key.post("/geocode", json={"query": "Whole Foods"})
+        assert response.status_code == 401
+    finally:
+        settings.proxy_api_key = original_key
 
 
 def test_route_insufficient_waypoints():
