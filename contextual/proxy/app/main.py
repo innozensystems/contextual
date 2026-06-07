@@ -85,7 +85,7 @@ class GeocodeResponse(BaseModel):
 
 class RouteRequest(BaseModel):
     waypoints: list[tuple[float, float]] = Field(
-        ..., min_length=2, max_length=25, description="List of (lat, lng) waypoints"
+        ..., max_length=25, description="List of (lat, lng) waypoints"
     )
     optimize: bool = Field(default=True, description="Optimize waypoint order (TSP)")
     profile: str = Field(default="mapbox/driving", description="Routing profile")
