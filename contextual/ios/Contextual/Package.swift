@@ -18,5 +18,10 @@ let package = Package(
             ],
             path: "Sources"
         ),
+        .testTarget(
+            name: "ContextualTests",
+            dependencies: ["Contextual"],
+            path: "Tests"
+        ),
     ]
 )

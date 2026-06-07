@@ -102,6 +102,26 @@ final class GeofenceService: NSObject, ObservableObject {
     func updateTaskLocation(taskId: UUID, coordinate: CLLocationCoordinate2D) {
         taskLocations[taskId] = coordinate
     }
+
+    // MARK: - Pure logic (testable without CLLocationManager)
+
+    /// Return the nearest task IDs up to the geofence limit.
+    static func nearestTaskIds(
+        tasks: [CTask],
+        coordinates: [UUID: CLLocationCoordinate2D],
+        currentLocation: CLLocation,
+        limit: Int = 20
+    ) -> [UUID] {
+        let sorted = tasks
+            .compactMap { task -> (UUID, CLLocationDistance)? in
+                guard let coord = coordinates[task.id] else { return nil }
+                let dist = currentLocation.distance(from: CLLocation(latitude: coord.latitude, longitude: coord.longitude))
+                return (task.id, dist)
+            }
+            .sorted { $0.1 < $1.1 }
+            .prefix(limit)
+        return sorted.map { $0.0 }
+    }
 }
 
 extension GeofenceService: CLLocationManagerDelegate {

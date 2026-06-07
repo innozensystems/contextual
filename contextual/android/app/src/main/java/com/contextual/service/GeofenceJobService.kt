@@ -10,24 +10,18 @@ import com.contextual.data.Task
 import kotlinx.coroutines.tasks.await
 
 object GeofenceManager {
-    private const val MAX_GEOFENCES = 20
-
     suspend fun updateGeofences(context: Context, tasks: List<Task>) {
         val geofencingClient = LocationServices.getGeofencingClient(context)
-        val activeTasks = tasks.filter { it.status == TaskStatus.ACTIVE && it.locationId != null }
-            .take(MAX_GEOFENCES)
+        val specs = GeofencePlanner.buildSpecs(tasks)
 
         // Remove all existing
         geofencingClient.removeGeofences(getPendingIntent(context))
 
         // Add new
-        val geofences = activeTasks.mapNotNull { task ->
-            val lat = task.locations?.latitude
-            val lng = task.locations?.longitude
-            if (lat == null || lng == null) return@mapNotNull null
+        val geofences = specs.map { spec ->
             Geofence.Builder()
-                .setRequestId("task-${task.id}")
-                .setCircularRegion(lat, lng, task.reminderRadiusMeters.toFloat())
+                .setRequestId(spec.requestId)
+                .setCircularRegion(spec.latitude, spec.longitude, spec.radiusMeters.toFloat())
                 .setExpirationDuration(Geofence.NEVER_EXPIRE)
                 .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
                 .build()
