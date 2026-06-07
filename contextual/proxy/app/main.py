@@ -128,13 +128,16 @@ async def geocode(req: GeocodeRequest, x_device_id: Optional[str] = Header(defau
         params["proximity"] = f"{req.proximity_lng},{req.proximity_lat}"
 
     cache_key = _cache_key("geocode", params)
-    r = await get_redis()
 
     # Try cache
-    cached = await r.get(cache_key)
-    if cached:
-        data = json.loads(cached)
-        return GeocodeResponse(results=[GeocodeResult(**r) for r in data], cached=True)
+    try:
+        r = await get_redis()
+        cached = await r.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            return GeocodeResponse(results=[GeocodeResult(**r) for r in data], cached=True)
+    except Exception:
+        pass  # Redis unavailable; fall through to Mapbox
 
     # Forward to Mapbox
     url = "https://api.mapbox.com/search/searchbox/v1/forward"
@@ -162,7 +165,11 @@ async def geocode(req: GeocodeRequest, x_device_id: Optional[str] = Header(defau
         )
 
     # Cache raw result
-    await r.setex(cache_key, settings.max_cache_seconds, json.dumps([r.model_dump() for r in results]))
+    try:
+        r = await get_redis()
+        await r.setex(cache_key, settings.max_cache_seconds, json.dumps([r.model_dump() for r in results]))
+    except Exception:
+        pass  # Redis unavailable; skip caching
 
     return GeocodeResponse(results=results, cached=False)
 
@@ -179,12 +186,16 @@ async def reverse_geocode(
 
     params = {"access_token": settings.mapbox_token, "limit": 1}
     cache_key = _cache_key("reverse", {"lat": lat, "lng": lng})
-    r = await get_redis()
 
-    cached = await r.get(cache_key)
-    if cached:
-        data = json.loads(cached)
-        return {"result": data, "cached": True}
+    # Try cache
+    try:
+        r = await get_redis()
+        cached = await r.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            return {"result": data, "cached": True}
+    except Exception:
+        pass  # Redis unavailable; fall through to Mapbox
 
     url = f"https://api.mapbox.com/search/searchbox/v1/reverse"
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -216,7 +227,12 @@ async def reverse_geocode(
         "place_id": props.get("mapbox_id"),
     }
 
-    await r.setex(cache_key, settings.max_cache_seconds, json.dumps(result))
+    try:
+        r = await get_redis()
+        await r.setex(cache_key, settings.max_cache_seconds, json.dumps(result))
+    except Exception:
+        pass  # Redis unavailable; skip caching
+
     return {"result": result, "cached": False}
 
 
@@ -247,12 +263,16 @@ async def route(req: RouteRequest, x_device_id: Optional[str] = Header(default=N
         url = "https://api.mapbox.com/directions/v5/" + req.profile + "/" + coords_str
 
     cache_key = _cache_key("route", {"coords": coords_str, "optimize": req.optimize, "profile": req.profile})
-    r = await get_redis()
 
-    cached = await r.get(cache_key)
-    if cached:
-        data = json.loads(cached)
-        return RouteResponse(**data)
+    # Try cache
+    try:
+        r = await get_redis()
+        cached = await r.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            return RouteResponse(**data)
+    except Exception:
+        pass  # Redis unavailable; fall through to Mapbox
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(url, params=params)
@@ -290,7 +310,12 @@ async def route(req: RouteRequest, x_device_id: Optional[str] = Header(default=N
         geometry=trip.get("geometry"),
     )
 
-    await r.setex(cache_key, settings.max_cache_seconds, json.dumps(response.model_dump()))
+    try:
+        r = await get_redis()
+        await r.setex(cache_key, settings.max_cache_seconds, json.dumps(response.model_dump()))
+    except Exception:
+        pass  # Redis unavailable; skip caching
+
     return response
 
 
