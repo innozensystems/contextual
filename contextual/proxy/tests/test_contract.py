@@ -6,18 +6,20 @@ model field is renamed or removed, these tests fail before the mobile app crashe
 """
 
 import json
+
 import pytest
+
 from app.main import (
     GeocodeResponse,
     GeocodeResult,
-    RouteResponse,
     RouteLeg,
+    RouteResponse,
 )
-
 
 # ---------------------------------------------------------------------------
 # Geocode contract
 # ---------------------------------------------------------------------------
+
 
 def test_geocode_response_json_keys_match_mobile_contract():
     """Proxy GeocodeResponse must serialize keys that iOS/Android expect."""
@@ -36,7 +38,13 @@ def test_geocode_response_json_keys_match_mobile_contract():
 
     # Result keys (snake_case matches proxy; mobile maps via CodingKeys)
     result_json = raw["results"][0]
-    assert set(result_json.keys()) == {"name", "address", "latitude", "longitude", "place_id"}
+    assert set(result_json.keys()) == {
+        "name",
+        "address",
+        "latitude",
+        "longitude",
+        "place_id",
+    }
 
     # Type assertions
     assert isinstance(result_json["name"], str)
@@ -60,6 +68,7 @@ def test_geocode_response_handles_null_address():
 # Reverse geocode contract
 # ---------------------------------------------------------------------------
 
+
 def test_reverse_geocode_response_json_keys_match_mobile_contract():
     """Reverse endpoint returns {"result": {...}, "cached": bool}."""
     # The reverse endpoint returns a plain dict, not a Pydantic model.
@@ -75,13 +84,20 @@ def test_reverse_geocode_response_json_keys_match_mobile_contract():
     raw = json.loads(json.dumps(response))
 
     assert set(raw.keys()) == {"result", "cached"}
-    assert set(raw["result"].keys()) == {"name", "address", "latitude", "longitude", "place_id"}
+    assert set(raw["result"].keys()) == {
+        "name",
+        "address",
+        "latitude",
+        "longitude",
+        "place_id",
+    }
     assert raw["cached"] is True
 
 
 # ---------------------------------------------------------------------------
 # Route contract
 # ---------------------------------------------------------------------------
+
 
 def test_route_response_json_keys_match_mobile_contract():
     """Proxy RouteResponse must serialize keys that iOS/Android expect."""
@@ -100,8 +116,12 @@ def test_route_response_json_keys_match_mobile_contract():
 
     # Top-level keys
     assert set(raw.keys()) == {
-        "distance_meters", "duration_seconds", "legs",
-        "waypoints_order", "geometry", "cached",
+        "distance_meters",
+        "duration_seconds",
+        "legs",
+        "waypoints_order",
+        "geometry",
+        "cached",
     }
 
     # Leg keys
@@ -135,6 +155,7 @@ def test_route_response_handles_null_geometry():
 # ---------------------------------------------------------------------------
 # Waypoint request contract (proxy receives from mobile)
 # ---------------------------------------------------------------------------
+
 
 def test_route_request_json_matches_mobile_payload():
     """Verify the JSON mobile sends matches what the proxy RouteRequest parses."""
@@ -173,14 +194,15 @@ def test_geocode_request_json_matches_mobile_payload():
 # Error response contract
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "status,expected_detail_present",
     [
-        (400, True),   # bad request
-        (404, True),   # not found
-        (429, True),   # rate limited
-        (502, True),   # mapbox error
-        (503, True),   # not configured
+        (400, True),  # bad request
+        (404, True),  # not found
+        (429, True),  # rate limited
+        (502, True),  # mapbox error
+        (503, True),  # not configured
     ],
 )
 def test_error_response_json_has_detail(status, expected_detail_present):

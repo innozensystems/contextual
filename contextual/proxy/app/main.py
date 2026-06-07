@@ -4,14 +4,13 @@ FastAPI app that proxies Mapbox/Google Places APIs,
 caches results in Redis, and protects API keys.
 """
 
-import os
 import hashlib
 import json
 from typing import Optional
 
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException, Header, Query, Request, Depends
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -72,6 +71,7 @@ async def rate_limit_dependency(request: Request):
     if not _check_rate_limit(client_id):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
 
+
 # Redis client (initialized on first use)
 _redis_client: Optional[redis.Redis] = None
 
@@ -92,6 +92,7 @@ def _cache_key(prefix: str, params: dict) -> str:
 # ========================
 # Request / Response Models
 # ========================
+
 
 class GeocodeRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=200, description="Address or place name")
@@ -115,9 +116,7 @@ class GeocodeResponse(BaseModel):
 
 
 class RouteRequest(BaseModel):
-    waypoints: list[tuple[float, float]] = Field(
-        ..., max_length=25, description="List of (lat, lng) waypoints"
-    )
+    waypoints: list[tuple[float, float]] = Field(..., max_length=25, description="List of (lat, lng) waypoints")
     optimize: bool = Field(default=True, description="Optimize waypoint order (TSP)")
     profile: str = Field(default="mapbox/driving", description="Routing profile")
 
@@ -140,6 +139,7 @@ class RouteResponse(BaseModel):
 # ========================
 # Endpoints
 # ========================
+
 
 @app.post("/geocode", response_model=GeocodeResponse)
 async def geocode(
@@ -184,7 +184,8 @@ async def geocode(
 
     if resp.status_code != 200:
         raise HTTPException(
-            status_code=502, detail=f"Mapbox error: {resp.status_code} {resp.text[:200]}"
+            status_code=502,
+            detail=f"Mapbox error: {resp.status_code} {resp.text[:200]}",
         )
 
     mb_data = resp.json()
@@ -205,7 +206,11 @@ async def geocode(
     # Cache raw result
     try:
         r = await get_redis()
-        await r.setex(cache_key, settings.max_cache_seconds, json.dumps([r.model_dump() for r in results]))
+        await r.setex(
+            cache_key,
+            settings.max_cache_seconds,
+            json.dumps([r.model_dump() for r in results]),
+        )
     except Exception:
         pass  # Redis unavailable; skip caching
 
@@ -308,7 +313,10 @@ async def route(
     else:
         url = "https://api.mapbox.com/directions/v5/" + req.profile + "/" + coords_str
 
-    cache_key = _cache_key("route", {"coords": coords_str, "optimize": req.optimize, "profile": req.profile})
+    cache_key = _cache_key(
+        "route",
+        {"coords": coords_str, "optimize": req.optimize, "profile": req.profile},
+    )
 
     # Try cache
     try:
@@ -328,7 +336,10 @@ async def route(
         raise HTTPException(status_code=502, detail=f"Mapbox timeout: {exc}")
 
     if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Mapbox error: {resp.status_code} {resp.text[:200]}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Mapbox error: {resp.status_code} {resp.text[:200]}",
+        )
 
     mb_data = resp.json()
 
@@ -336,9 +347,7 @@ async def route(
     if req.optimize and mb_data.get("trips"):
         trip = mb_data["trips"][0]
         legs_data = trip.get("legs", [])
-        waypoints_order = [
-            wp.get("waypoint_index", i) for i, wp in enumerate(mb_data.get("waypoints", []))
-        ]
+        waypoints_order = [wp.get("waypoint_index", i) for i, wp in enumerate(mb_data.get("waypoints", []))]
     elif mb_data.get("routes"):
         route_obj = mb_data["routes"][0]
         trip = route_obj

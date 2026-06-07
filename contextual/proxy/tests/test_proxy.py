@@ -1,8 +1,8 @@
 """Tests for the Contextual thin proxy."""
 
-import pytest
 from fastapi.testclient import TestClient
-from app.main import app, Settings, settings
+
+from app.main import app, settings
 
 client = TestClient(app)
 
@@ -31,7 +31,10 @@ def test_reverse_geocode_missing_token():
 def test_route_missing_token():
     response = client.post(
         "/route",
-        json={"waypoints": [[37.7749, -122.4194], [37.7849, -122.4094]], "optimize": True},
+        json={
+            "waypoints": [[37.7749, -122.4194], [37.7849, -122.4094]],
+            "optimize": True,
+        },
     )
     assert response.status_code == 503
 

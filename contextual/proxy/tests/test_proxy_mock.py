@@ -4,12 +4,12 @@ These tests mock Mapbox API responses (via respx) and Redis (via fakeredis)
 so the suite runs fully offline and covers happy paths, caching, and errors.
 """
 
-import json
+import fakeredis.aioredis
 import pytest
 import respx
-import fakeredis.aioredis
-from httpx import Response
 from fastapi.testclient import TestClient
+from httpx import Response
+
 from app import main
 from app.main import app, settings
 
@@ -19,6 +19,7 @@ client = TestClient(app)
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def reset_redis_between_tests():
@@ -50,6 +51,7 @@ def fake_redis():
 # ---------------------------------------------------------------------------
 # Existing baseline tests (no mocks needed)
 # ---------------------------------------------------------------------------
+
 
 def test_health():
     response = client.get("/health")
@@ -88,6 +90,7 @@ def test_route_insufficient_waypoints(mock_mapbox_token):
 # ---------------------------------------------------------------------------
 # Mocked happy-path tests
 # ---------------------------------------------------------------------------
+
 
 @respx.mock
 def test_geocode_success(mock_mapbox_token, fake_redis):
@@ -215,9 +218,9 @@ def test_route_directions_success(mock_mapbox_token, fake_redis):
             }
         ]
     }
-    route = respx.get(
-        url__regex=r"https://api\.mapbox\.com/directions/v5/.*"
-    ).mock(return_value=Response(200, json=mb_response))
+    route = respx.get(url__regex=r"https://api\.mapbox\.com/directions/v5/.*").mock(
+        return_value=Response(200, json=mb_response)
+    )
 
     response = client.post(
         "/route",
@@ -259,9 +262,9 @@ def test_route_optimized_trip_success(mock_mapbox_token, fake_redis):
             {"waypoint_index": 1},
         ],
     }
-    route = respx.get(
-        url__regex=r"https://api\.mapbox\.com/optimized-trips/v1/.*"
-    ).mock(return_value=Response(200, json=mb_response))
+    route = respx.get(url__regex=r"https://api\.mapbox\.com/optimized-trips/v1/.*").mock(
+        return_value=Response(200, json=mb_response)
+    )
 
     response = client.post(
         "/route",
@@ -321,6 +324,7 @@ def test_route_mapbox_error(mock_mapbox_token, fake_redis):
 # ---------------------------------------------------------------------------
 # Redis degradation tests
 # ---------------------------------------------------------------------------
+
 
 def test_geocode_redis_unavailable(mock_mapbox_token):
     """When Redis is broken, geocode still works by skipping cache."""

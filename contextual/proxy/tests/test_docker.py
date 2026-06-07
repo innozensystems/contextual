@@ -10,6 +10,7 @@ Usage:
 import subprocess
 import time
 import urllib.request
+
 import pytest
 
 IMAGE_NAME = "contextual-proxy:test"
@@ -27,6 +28,7 @@ def _docker_available() -> bool:
 def test_docker_image_builds():
     """Build the Docker image from the proxy Dockerfile."""
     import pathlib
+
     proxy_dir = pathlib.Path(__file__).resolve().parent.parent
     result = subprocess.run(
         ["docker", "build", "-t", IMAGE_NAME, "."],
@@ -49,11 +51,17 @@ def test_docker_container_starts_and_responds():
     # Start container with dummy env vars
     result = subprocess.run(
         [
-            "docker", "run", "-d",
-            "--name", CONTAINER_NAME,
-            "-p", "18000:8000",
-            "-e", "MAPBOX_TOKEN=dummy-token-for-test",
-            "-e", "REDIS_URL=redis://localhost:6379/0",
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            CONTAINER_NAME,
+            "-p",
+            "18000:8000",
+            "-e",
+            "MAPBOX_TOKEN=dummy-token-for-test",
+            "-e",
+            "REDIS_URL=redis://localhost:6379/0",
             IMAGE_NAME,
         ],
         capture_output=True,

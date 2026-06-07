@@ -11,7 +11,27 @@ on:
       - 'contextual/proxy/**'
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff==0.15.16
+
+      - name: Lint and format check
+        run: |
+          cd contextual/proxy
+          ruff check app/ tests/
+          ruff format --check app/ tests/
+
   test:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

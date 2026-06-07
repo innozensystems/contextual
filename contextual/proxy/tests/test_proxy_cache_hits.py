@@ -1,11 +1,11 @@
 """Fill remaining coverage gaps for reverse-geocode and route cache hits."""
 
-import json
+import fakeredis.aioredis
 import pytest
 import respx
-import fakeredis.aioredis
-from httpx import Response
 from fastapi.testclient import TestClient
+from httpx import Response
+
 from app import main
 from app.main import app, settings
 
@@ -40,14 +40,18 @@ def fake_redis():
 def test_reverse_geocode_cache_hit(mock_mapbox_token, fake_redis):
     """Second identical reverse-geocode request returns cached result."""
     mb = {
-        "features": [{
-            "properties": {"name": "SF City Hall", "full_address": "1 Dr Carlton B Goodlett Pl", "mapbox_id": "mbx-456"},
-            "geometry": {"coordinates": [-122.4194, 37.7793]},
-        }]
+        "features": [
+            {
+                "properties": {
+                    "name": "SF City Hall",
+                    "full_address": "1 Dr Carlton B Goodlett Pl",
+                    "mapbox_id": "mbx-456",
+                },
+                "geometry": {"coordinates": [-122.4194, 37.7793]},
+            }
+        ]
     }
-    route = respx.get("https://api.mapbox.com/search/searchbox/v1/reverse").mock(
-        return_value=Response(200, json=mb)
-    )
+    route = respx.get("https://api.mapbox.com/search/searchbox/v1/reverse").mock(return_value=Response(200, json=mb))
 
     r1 = client.get("/reverse-geocode?lat=37.7793&lng=-122.4194")
     assert r1.status_code == 200
@@ -66,16 +70,22 @@ def test_reverse_geocode_cache_hit(mock_mapbox_token, fake_redis):
 def test_route_directions_cache_hit(mock_mapbox_token, fake_redis):
     """Second identical route request returns cached result."""
     mb = {
-        "routes": [{
-            "distance": 1523.4,
-            "duration": 320.0,
-            "geometry": "polyline123",
-            "legs": [{"distance": 1523.4, "duration": 320.0, "summary": "Market to Mission"}],
-        }]
+        "routes": [
+            {
+                "distance": 1523.4,
+                "duration": 320.0,
+                "geometry": "polyline123",
+                "legs": [
+                    {
+                        "distance": 1523.4,
+                        "duration": 320.0,
+                        "summary": "Market to Mission",
+                    }
+                ],
+            }
+        ]
     }
-    route = respx.get(url__regex=r"https://api\.mapbox\.com/directions/v5/.*").mock(
-        return_value=Response(200, json=mb)
-    )
+    route = respx.get(url__regex=r"https://api\.mapbox\.com/directions/v5/.*").mock(return_value=Response(200, json=mb))
 
     payload = {
         "waypoints": [[37.7749, -122.4194], [37.7849, -122.4094]],
@@ -102,15 +112,17 @@ def test_route_directions_cache_hit(mock_mapbox_token, fake_redis):
 def test_route_optimized_cache_hit(mock_mapbox_token, fake_redis):
     """Second identical optimized route request returns cached result."""
     mb = {
-        "trips": [{
-            "distance": 2100.0,
-            "duration": 450.0,
-            "geometry": "opt-polyline",
-            "legs": [
-                {"distance": 1000.0, "duration": 200.0, "summary": "A to B"},
-                {"distance": 1100.0, "duration": 250.0, "summary": "B to C"},
-            ],
-        }],
+        "trips": [
+            {
+                "distance": 2100.0,
+                "duration": 450.0,
+                "geometry": "opt-polyline",
+                "legs": [
+                    {"distance": 1000.0, "duration": 200.0, "summary": "A to B"},
+                    {"distance": 1100.0, "duration": 250.0, "summary": "B to C"},
+                ],
+            }
+        ],
         "waypoints": [
             {"waypoint_index": 0},
             {"waypoint_index": 2},

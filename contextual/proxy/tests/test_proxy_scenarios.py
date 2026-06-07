@@ -4,12 +4,12 @@ These tests cover edge cases, error conditions, and real-world failure modes
 using mocked Mapbox responses and fakeredis.
 """
 
-import json
+import fakeredis.aioredis
 import pytest
 import respx
-import fakeredis.aioredis
-from httpx import Response
 from fastapi.testclient import TestClient
+from httpx import Response
+
 from app import main
 from app.main import app, settings
 
@@ -19,6 +19,7 @@ client = TestClient(app)
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def reset_redis_between_tests():
@@ -51,6 +52,7 @@ def fake_redis():
 # Input validation & edge cases
 # ---------------------------------------------------------------------------
 
+
 def test_geocode_query_too_long(mock_mapbox_token):
     """Geocode query exceeding max_length=200 should return 422."""
     response = client.post("/geocode", json={"query": "a" * 201})
@@ -73,17 +75,25 @@ def test_geocode_proximity_only_lat(mock_mapbox_token):
     """Proximity with only lat provided should ignore proximity parameter."""
     with respx.mock:
         route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
-            return_value=Response(200, json={
-                "features": [{
-                    "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
-                    "geometry": {"coordinates": [-122.4, 37.7]},
-                }]
-            })
+            return_value=Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
+                            "geometry": {"coordinates": [-122.4, 37.7]},
+                        }
+                    ]
+                },
+            )
         )
-        response = client.post("/geocode", json={
-            "query": "Test",
-            "proximity_lat": 37.7,
-        })
+        response = client.post(
+            "/geocode",
+            json={
+                "query": "Test",
+                "proximity_lat": 37.7,
+            },
+        )
         assert response.status_code == 200
         # Should not include proximity param since lng is missing
         request = route.calls[0].request
@@ -126,6 +136,7 @@ def test_route_zero_waypoints(mock_mapbox_token):
 # CORS & health endpoint
 # ---------------------------------------------------------------------------
 
+
 def test_cors_preflight():
     """OPTIONS request should return 200 with CORS headers."""
     response = client.options(
@@ -151,16 +162,22 @@ def test_health_returns_version():
 # Geocode response parsing edge cases
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_geocode_feature_without_geometry(mock_mapbox_token, fake_redis):
     """Mapbox feature missing geometry should use default coordinates [0, 0]."""
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
-        return_value=Response(200, json={
-            "features": [{
-                "properties": {"name": "NoCoords", "full_address": "Nowhere", "mapbox_id": "mbx"},
-                # No geometry field
-            }]
-        })
+        return_value=Response(
+            200,
+            json={
+                "features": [
+                    {
+                        "properties": {"name": "NoCoords", "full_address": "Nowhere", "mapbox_id": "mbx"},
+                        # No geometry field
+                    }
+                ]
+            },
+        )
     )
     response = client.post("/geocode", json={"query": "NoCoords"})
     assert response.status_code == 200
@@ -173,12 +190,17 @@ def test_geocode_feature_without_geometry(mock_mapbox_token, fake_redis):
 def test_geocode_feature_without_properties(mock_mapbox_token, fake_redis):
     """Mapbox feature missing properties should use query as name."""
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
-        return_value=Response(200, json={
-            "features": [{
-                "geometry": {"coordinates": [-122.0, 37.0]},
-                # No properties field
-            }]
-        })
+        return_value=Response(
+            200,
+            json={
+                "features": [
+                    {
+                        "geometry": {"coordinates": [-122.0, 37.0]},
+                        # No properties field
+                    }
+                ]
+            },
+        )
     )
     response = client.post("/geocode", json={"query": "FallbackName"})
     assert response.status_code == 200
@@ -204,10 +226,12 @@ def test_geocode_respects_limit(mock_mapbox_token, fake_redis):
     """Should return at most `limit` results even if Mapbox returns more."""
     features = []
     for i in range(10):
-        features.append({
-            "properties": {"name": f"Place{i}", "full_address": f"{i} St", "mapbox_id": f"mbx-{i}"},
-            "geometry": {"coordinates": [-122.0 + i * 0.1, 37.0 + i * 0.1]},
-        })
+        features.append(
+            {
+                "properties": {"name": f"Place{i}", "full_address": f"{i} St", "mapbox_id": f"mbx-{i}"},
+                "geometry": {"coordinates": [-122.0 + i * 0.1, 37.0 + i * 0.1]},
+            }
+        )
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
         return_value=Response(200, json={"features": features})
     )
@@ -220,16 +244,22 @@ def test_geocode_respects_limit(mock_mapbox_token, fake_redis):
 # Cache scenarios
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_cache_key_includes_proximity(mock_mapbox_token, fake_redis):
     """Requests with different proximity should have different cache keys."""
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
-        return_value=Response(200, json={
-            "features": [{
-                "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
-                "geometry": {"coordinates": [-122.4, 37.7]},
-            }]
-        })
+        return_value=Response(
+            200,
+            json={
+                "features": [
+                    {
+                        "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
+                        "geometry": {"coordinates": [-122.4, 37.7]},
+                    }
+                ]
+            },
+        )
     )
     # Two requests with different proximity
     r1 = client.post("/geocode", json={"query": "Test", "proximity_lat": 37.7, "proximity_lng": -122.4})
@@ -250,12 +280,17 @@ def test_geocode_cache_expiration(mock_mapbox_token, fake_redis):
     import asyncio
 
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
-        return_value=Response(200, json={
-            "features": [{
-                "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
-                "geometry": {"coordinates": [-122.4, 37.7]},
-            }]
-        })
+        return_value=Response(
+            200,
+            json={
+                "features": [
+                    {
+                        "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
+                        "geometry": {"coordinates": [-122.4, 37.7]},
+                    }
+                ]
+            },
+        )
     )
 
     # First request
@@ -285,6 +320,7 @@ def test_geocode_cache_expiration(mock_mapbox_token, fake_redis):
 # ---------------------------------------------------------------------------
 # Route optimization edge cases
 # ---------------------------------------------------------------------------
+
 
 @respx.mock
 def test_route_directions_no_routes(mock_mapbox_token, fake_redis):
@@ -331,15 +367,20 @@ def test_route_optimized_empty_trips(mock_mapbox_token, fake_redis):
 def test_route_optimized_no_waypoints_index(mock_mapbox_token, fake_redis):
     """Optimized-trips without waypoint_index should fallback to enumerated order."""
     route = respx.get(url__regex=r"https://api\.mapbox\.com/optimized-trips/v1/.*").mock(
-        return_value=Response(200, json={
-            "trips": [{
-                "distance": 1000,
-                "duration": 200,
-                "geometry": "poly",
-                "legs": [{"distance": 1000, "duration": 200, "summary": "A to B"}],
-            }],
-            "waypoints": [{}, {}],  # No waypoint_index field
-        })
+        return_value=Response(
+            200,
+            json={
+                "trips": [
+                    {
+                        "distance": 1000,
+                        "duration": 200,
+                        "geometry": "poly",
+                        "legs": [{"distance": 1000, "duration": 200, "summary": "A to B"}],
+                    }
+                ],
+                "waypoints": [{}, {}],  # No waypoint_index field
+            },
+        )
     )
     response = client.post(
         "/route",
@@ -358,14 +399,19 @@ def test_route_optimized_no_waypoints_index(mock_mapbox_token, fake_redis):
 def test_route_directions_missing_legs(mock_mapbox_token, fake_redis):
     """Directions route without legs should return empty legs list."""
     route = respx.get(url__regex=r"https://api\.mapbox\.com/directions/v5/.*").mock(
-        return_value=Response(200, json={
-            "routes": [{
-                "distance": 500,
-                "duration": 100,
-                "geometry": "poly",
-                # No legs field
-            }]
-        })
+        return_value=Response(
+            200,
+            json={
+                "routes": [
+                    {
+                        "distance": 500,
+                        "duration": 100,
+                        "geometry": "poly",
+                        # No legs field
+                    }
+                ]
+            },
+        )
     )
     response = client.post(
         "/route",
@@ -382,6 +428,7 @@ def test_route_directions_missing_legs(mock_mapbox_token, fake_redis):
 # ---------------------------------------------------------------------------
 # Network & Mapbox error scenarios
 # ---------------------------------------------------------------------------
+
 
 @respx.mock
 def test_geocode_mapbox_500(mock_mapbox_token, fake_redis):
@@ -400,6 +447,7 @@ def test_geocode_mapbox_500(mock_mapbox_token, fake_redis):
 def test_geocode_mapbox_timeout(mock_mapbox_token, fake_redis):
     """Mapbox timeout should return 502 instead of crashing."""
     import httpx
+
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
         side_effect=httpx.ConnectTimeout("Connection timed out")
     )
@@ -423,6 +471,7 @@ def test_reverse_geocode_mapbox_404(mock_mapbox_token, fake_redis):
 def test_route_mapbox_timeout(mock_mapbox_token, fake_redis):
     """Mapbox route timeout should return 502."""
     import httpx
+
     route = respx.get(url__regex=r"https://api\.mapbox\.com/directions/v5/.*").mock(
         side_effect=httpx.ReadTimeout("Read timed out")
     )
@@ -442,6 +491,7 @@ def test_route_mapbox_timeout(mock_mapbox_token, fake_redis):
 def test_reverse_geocode_mapbox_timeout(mock_mapbox_token, fake_redis):
     """Mapbox reverse geocode timeout should return 502."""
     import httpx
+
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/reverse").mock(
         side_effect=httpx.ConnectTimeout("Connection timed out")
     )
@@ -472,6 +522,7 @@ def test_route_mapbox_429_rate_limited(mock_mapbox_token, fake_redis):
 # Redis scenarios
 # ---------------------------------------------------------------------------
 
+
 def test_reverse_geocode_redis_unavailable(mock_mapbox_token):
     """Reverse geocode works without Redis."""
     original = main.get_redis
@@ -483,12 +534,17 @@ def test_reverse_geocode_redis_unavailable(mock_mapbox_token):
     try:
         with respx.mock:
             respx.get("https://api.mapbox.com/search/searchbox/v1/reverse").mock(
-                return_value=Response(200, json={
-                    "features": [{
-                        "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
-                        "geometry": {"coordinates": [-122.4, 37.7]},
-                    }]
-                })
+                return_value=Response(
+                    200,
+                    json={
+                        "features": [
+                            {
+                                "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
+                                "geometry": {"coordinates": [-122.4, 37.7]},
+                            }
+                        ]
+                    },
+                )
             )
             response = client.get("/reverse-geocode?lat=37.7&lng=-122.4")
             assert response.status_code == 200
@@ -509,18 +565,23 @@ def test_route_redis_unavailable(mock_mapbox_token):
         with respx.mock:
             # Default optimize=True hits optimized-trips endpoint
             respx.get(url__regex=r"https://api\.mapbox\.com/optimized-trips/v1/.*").mock(
-                return_value=Response(200, json={
-                    "trips": [{
-                        "distance": 1000,
-                        "duration": 200,
-                        "geometry": "poly",
-                        "legs": [{"distance": 1000, "duration": 200, "summary": "A to B"}],
-                    }],
-                    "waypoints": [
-                        {"waypoint_index": 0},
-                        {"waypoint_index": 1},
-                    ],
-                })
+                return_value=Response(
+                    200,
+                    json={
+                        "trips": [
+                            {
+                                "distance": 1000,
+                                "duration": 200,
+                                "geometry": "poly",
+                                "legs": [{"distance": 1000, "duration": 200, "summary": "A to B"}],
+                            }
+                        ],
+                        "waypoints": [
+                            {"waypoint_index": 0},
+                            {"waypoint_index": 1},
+                        ],
+                    },
+                )
             )
             response = client.post(
                 "/route",
@@ -537,6 +598,7 @@ def test_route_redis_unavailable(mock_mapbox_token):
 # ---------------------------------------------------------------------------
 # Settings & configuration
 # ---------------------------------------------------------------------------
+
 
 def test_rate_limit_exceeded(mock_mapbox_token):
     """After exceeding per-minute limit, subsequent requests return 429."""
@@ -566,6 +628,7 @@ def test_rate_limit_exceeded(mock_mapbox_token):
 def test_settings_default_values():
     """Verify Settings defaults are sensible."""
     from app.main import Settings
+
     s = Settings()
     assert s.mapbox_token == ""
     assert s.google_places_api_key == ""
@@ -577,6 +640,7 @@ def test_settings_default_values():
 def test_settings_cors_origins():
     """Verify CORS origins setting default and parsing."""
     from app.main import Settings
+
     s = Settings()
     assert s.cors_origins == "*"
 
@@ -596,6 +660,7 @@ def test_cors_allows_all_origins():
 # Header handling
 # ---------------------------------------------------------------------------
 
+
 def test_geocode_accepts_device_id_header(mock_mapbox_token):
     """Geocode should accept x-device-id header without error."""
     with respx.mock:
@@ -614,12 +679,17 @@ def test_reverse_geocode_accepts_device_id_header(mock_mapbox_token):
     """Reverse geocode should accept x-device-id header."""
     with respx.mock:
         respx.get("https://api.mapbox.com/search/searchbox/v1/reverse").mock(
-            return_value=Response(200, json={
-                "features": [{
-                    "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
-                    "geometry": {"coordinates": [-122.4, 37.7]},
-                }]
-            })
+            return_value=Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
+                            "geometry": {"coordinates": [-122.4, 37.7]},
+                        }
+                    ]
+                },
+            )
         )
         response = client.get(
             "/reverse-geocode?lat=37.7&lng=-122.4",
@@ -632,18 +702,23 @@ def test_route_accepts_device_id_header(mock_mapbox_token):
     """Route should accept x-device-id header."""
     with respx.mock:
         respx.get(url__regex=r"https://api\.mapbox\.com/optimized-trips/v1/.*").mock(
-            return_value=Response(200, json={
-                "trips": [{
-                    "distance": 1000,
-                    "duration": 200,
-                    "geometry": "poly",
-                    "legs": [{"distance": 1000, "duration": 200, "summary": "A to B"}],
-                }],
-                "waypoints": [
-                    {"waypoint_index": 0},
-                    {"waypoint_index": 1},
-                ],
-            })
+            return_value=Response(
+                200,
+                json={
+                    "trips": [
+                        {
+                            "distance": 1000,
+                            "duration": 200,
+                            "geometry": "poly",
+                            "legs": [{"distance": 1000, "duration": 200, "summary": "A to B"}],
+                        }
+                    ],
+                    "waypoints": [
+                        {"waypoint_index": 0},
+                        {"waypoint_index": 1},
+                    ],
+                },
+            )
         )
         response = client.post(
             "/route",
