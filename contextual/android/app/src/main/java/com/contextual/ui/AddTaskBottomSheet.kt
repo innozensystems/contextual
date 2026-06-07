@@ -8,11 +8,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.contextual.BuildConfig
 import com.contextual.data.Location
 import com.contextual.data.SupabaseClient
 import com.contextual.data.Task
@@ -53,7 +56,7 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupPrioritySpinner() {
-        val priorities = TaskPriority.values().map { it.name.capitalize() }
+        val priorities = TaskPriority.values().map { it.name.replaceFirstChar { ch -> ch.uppercase() } }
         binding.prioritySpinner.adapter = ArrayAdapter(
             requireContext(),
             android.R.layout.simple_spinner_dropdown_item,
@@ -62,11 +65,29 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupLocationSearch() {
+        // Clear error when user edits the location field
+        binding.locationInput.doAfterTextChanged {
+            binding.locationInputLayout.error = null
+        }
+
         binding.searchLocationButton.setOnClickListener {
-            val query = binding.locationInput.text.toString()
-            if (query.isNotEmpty()) {
-                searchLocation(query)
+            val query = binding.locationInput.text.toString().trim()
+            if (query.isEmpty()) {
+                binding.locationInputLayout.error = "Enter a location name"
+                return@setOnClickListener
             }
+
+            // Early warning if proxy is not configured
+            val baseUrl = BuildConfig.PROXY_BASE_URL
+            if (baseUrl.isBlank() || baseUrl == "http://localhost:8000") {
+                Toast.makeText(
+                    requireContext(),
+                    "Proxy not configured. Set PROXY_BASE_URL in local.properties or environment.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
+            searchLocation(query)
         }
     }
 
@@ -74,13 +95,28 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
         lifecycleScope.launch {
             try {
                 binding.searchLocationButton.isEnabled = false
+                binding.locationInputLayout.error = null
+
                 val results = ProxyService.geocode(query)
                 if (results.isNotEmpty()) {
                     selectedLocation = results.first()
                     binding.locationInput.setText(results.first().name)
+                    Toast.makeText(
+                        requireContext(),
+                        "Selected: ${results.first().name}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    binding.locationInputLayout.error = "No locations found"
                 }
+            } catch (e: ProxyService.ProxyException) {
+                val msg = e.message ?: "Location search failed"
+                binding.locationInputLayout.error = msg
+                Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
-                binding.locationInput.error = "Location not found"
+                val msg = e.message ?: "Location search failed"
+                binding.locationInputLayout.error = "Location not found"
+                Toast.makeText(requireContext(), "Error: $msg", Toast.LENGTH_LONG).show()
             } finally {
                 binding.searchLocationButton.isEnabled = true
             }
@@ -124,6 +160,7 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
         lifecycleScope.launch {
             try {
                 binding.saveButton.isEnabled = false
+                binding.errorText.visibility = View.GONE
 
                 val userId = "current-user-id" // Get from auth
                 var locationId: String? = null
@@ -154,6 +191,7 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
             } catch (e: Exception) {
                 binding.errorText.text = "Failed to save — will retry when online"
                 binding.errorText.visibility = View.VISIBLE
+                Toast.makeText(requireContext(), "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
             } finally {
                 binding.saveButton.isEnabled = true
             }
