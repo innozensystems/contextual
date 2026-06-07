@@ -1,0 +1,45 @@
+name: Proxy Build & Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contextual/proxy/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contextual/proxy/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd contextual/proxy
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run tests
+        run: |
+          cd contextual/proxy
+          pytest tests/ -v
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t contextual-proxy:${{ github.sha }} contextual/proxy
+          echo "Push to registry here"

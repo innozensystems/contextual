@@ -1,0 +1,64 @@
+name: Android Build & Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contextual/android/**'
+      - 'contextual/proxy/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contextual/android/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build
+        run: |
+          cd contextual/android
+          ./gradlew assembleRelease
+
+      - name: Run tests
+        run: |
+          cd contextual/android
+          ./gradlew test
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: contextual/android/app/build/outputs/apk/release/*.apk
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: contextual/android
+
+      - name: Deploy to Play Store Internal
+        run: |
+          cd contextual/android
+          bundle exec fastlane deploy_internal
+        env:
+          PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}

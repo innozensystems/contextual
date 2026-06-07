@@ -1,0 +1,4 @@
+app_identifier("com.contextual.app")
+apple_id("your-apple-id@example.com")
+itc_team_id("12345678")
+team_id("ABCDEF1234")

@@ -1,0 +1,65 @@
+name: iOS Build & Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contextual/ios/**'
+      - 'contextual/proxy/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contextual/ios/**'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-elastic/action-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: contextual/ios
+
+      - name: Install dependencies
+        run: |
+          cd contextual/ios
+          bundle install
+
+      - name: Run tests
+        run: |
+          cd contextual/ios
+          bundle exec fastlane test
+
+      - name: Build archive
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cd contextual/ios
+          bundle exec fastlane build_archive
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FASTLANE_PASSWORD: ${{ secrets.FASTLANE_PASSWORD }}
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to TestFlight
+        run: |
+          cd contextual/ios
+          bundle exec fastlane beta
+        env:
+          APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY }}

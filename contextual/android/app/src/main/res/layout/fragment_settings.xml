@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Permissions"
+            android:textAppearance="?attr/textAppearanceOverline"
+            android:layout_marginTop="8dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/location_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Location" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/notifications_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Notifications"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Accessibility"
+            android:textAppearance="?attr/textAppearanceOverline"
+            android:layout_marginTop="24dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/reduce_motion_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Reduce Motion" />
+
+        <Button
+            android:id="@+id/sign_out_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="Sign Out"
+            android:textColor="?attr/colorError" />
+    </LinearLayout>
+</ScrollView>

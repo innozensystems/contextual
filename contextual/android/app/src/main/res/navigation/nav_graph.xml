@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/homeFragment">
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.contextual.ui.HomeFragment"
+        android:label="Contextual"
+        tools:layout="@layout/fragment_home">
+        <action
+            android:id="@+id/action_home_to_taskDetail"
+            app:destination="@id/taskDetailFragment" />
+        <action
+            android:id="@+id/action_home_to_trip"
+            app:destination="@id/tripFragment" />
+        <action
+            android:id="@+id/action_home_to_settings"
+            app:destination="@id/settingsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/taskDetailFragment"
+        android:name="com.contextual.ui.TaskDetailFragment"
+        android:label="Task"
+        tools:layout="@layout/fragment_task_detail">
+        <argument
+            android:name="task_id"
+            app:argType="string" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/tripFragment"
+        android:name="com.contextual.ui.TripFragment"
+        android:label="Trip"
+        tools:layout="@layout/fragment_trip" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.contextual.ui.SettingsFragment"
+        android:label="Settings"
+        tools:layout="@layout/fragment_settings" />
+
+</navigation>

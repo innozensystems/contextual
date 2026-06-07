@@ -1,0 +1,34 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Run tests"
+  lane :test do
+    scan(
+      scheme: "Contextual",
+      devices: ["iPhone 15"]
+    )
+  end
+
+  desc "Build archive"
+  lane :build_archive do
+    match(type: "appstore", readonly: true)
+    gym(
+      scheme: "Contextual",
+      export_method: "app-store",
+      output_directory: "build"
+    )
+  end
+
+  desc "Deploy to TestFlight"
+  lane :beta do
+    match(type: "appstore", readonly: true)
+    gym(
+      scheme: "Contextual",
+      export_method: "app-store"
+    )
+    pilot(
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+  end
+end

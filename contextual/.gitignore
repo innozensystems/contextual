@@ -1,0 +1,32 @@
+# iOS
+ios/Contextual/.build/
+ios/Contextual/.swiftpm/
+ios/Contextual/*.xcodeproj/
+ios/Contextual/*.xcworkspace/
+ios/Contextual/DerivedData/
+ios/Contextual/build/
+ios/fastlane/report.xml
+ios/fastlane/Preview.html
+ios/fastlane/screenshots
+ios/fastlane/test_output
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.iml
+android/.idea/
+android/captures/
+android/fastlane/report.xml
+
+# Proxy
+proxy/venv/
+proxy/__pycache__/
+proxy/*.pyc
+proxy/.env
+
+# General
+.DS_Store
+*.log
+*.tmp

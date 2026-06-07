@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Contextual</string>
+    <string name="add_task">Add task</string>
+    <string name="complete_task">Complete task</string>
+    <string name="voice_input">Voice input</string>
+    <string name="empty_state_icon">Empty state illustration</string>
+    <string name="empty_state_title">Nothing here yet</string>
+    <string name="empty_state_subtitle">Add your first task — just say it</string>
+    <string name="channel_task_context">Task reminders</string>
+    <string name="channel_task_context_desc">Context-aware reminders when you are near task locations</string>
+</resources>
