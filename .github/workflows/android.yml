@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'android/**'
-      - 'proxy/**'
+      - 'contextual/android/**'
+      - 'contextual/proxy/**'
   pull_request:
     branches: [main]
     paths:
-      - 'android/**'
+      - 'contextual/android/**'
 
 jobs:
   build:
@@ -28,7 +28,7 @@ jobs:
 
       - name: Build
         run: |
-          cd android
+          cd contextual/android
           ./gradlew assembleRelease
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -38,14 +38,14 @@ jobs:
 
       - name: Run tests
         run: |
-          cd android
+          cd contextual/android
           ./gradlew test
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: android-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: contextual/android/app/build/outputs/apk/release/*.apk
 
   deploy:
     needs: build
@@ -59,11 +59,11 @@ jobs:
         with:
           ruby-version: '3.2'
           bundler-cache: true
-          working-directory: android
+          working-directory: contextual/android
 
       - name: Deploy to Play Store Internal
         run: |
-          cd android
+          cd contextual/android
           bundle exec fastlane deploy_internal
         env:
           PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
