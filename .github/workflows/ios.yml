@@ -24,11 +24,13 @@ jobs:
           plutil -replace SUPABASE_ANON_KEY -string "${SUPABASE_ANON_KEY}" Contextual/Info.plist
           plutil -replace PROXY_BASE_URL -string "${PROXY_BASE_URL}" Contextual/Info.plist
           plutil -replace PROXY_CERTIFICATE_PINS -string "${PROXY_CERTIFICATE_PINS}" Contextual/Info.plist
+          plutil -replace PROXY_API_KEY -string "${PROXY_API_KEY}" Contextual/Info.plist
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           PROXY_BASE_URL: ${{ secrets.PROXY_BASE_URL }}
           PROXY_CERTIFICATE_PINS: ${{ secrets.PROXY_CERTIFICATE_PINS }}
+          PROXY_API_KEY: ${{ secrets.PROXY_API_KEY }}
 
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -75,11 +77,13 @@ jobs:
           plutil -replace SUPABASE_ANON_KEY -string "${SUPABASE_ANON_KEY}" Contextual/Info.plist
           plutil -replace PROXY_BASE_URL -string "${PROXY_BASE_URL}" Contextual/Info.plist
           plutil -replace PROXY_CERTIFICATE_PINS -string "${PROXY_CERTIFICATE_PINS}" Contextual/Info.plist
+          plutil -replace PROXY_API_KEY -string "${PROXY_API_KEY}" Contextual/Info.plist
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           PROXY_BASE_URL: ${{ secrets.PROXY_BASE_URL }}
           PROXY_CERTIFICATE_PINS: ${{ secrets.PROXY_CERTIFICATE_PINS }}
+          PROXY_API_KEY: ${{ secrets.PROXY_API_KEY }}
 
       - name: Deploy to TestFlight
         run: |

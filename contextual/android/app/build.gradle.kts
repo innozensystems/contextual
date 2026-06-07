@@ -22,11 +22,13 @@ android {
         val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: ""
         val proxyBaseUrl = System.getenv("PROXY_BASE_URL") ?: "http://localhost:8000"
         val proxyPins = System.getenv("PROXY_CERTIFICATE_PINS") ?: ""
+        val proxyApiKey = System.getenv("PROXY_API_KEY") ?: ""
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         buildConfigField("String", "PROXY_BASE_URL", "\"$proxyBaseUrl\"")
         buildConfigField("String", "PROXY_CERTIFICATE_PINS", "\"$proxyPins\"")
+        buildConfigField("String", "PROXY_API_KEY", "\"$proxyApiKey\"")
     }
 
     buildFeatures {

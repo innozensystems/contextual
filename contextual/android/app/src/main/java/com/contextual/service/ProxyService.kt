@@ -7,6 +7,7 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.android.Android
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -14,6 +15,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -21,6 +23,10 @@ import kotlinx.serialization.json.Json
 object ProxyService {
 
     private val baseUrl = BuildConfig.PROXY_BASE_URL
+    private val apiKey = BuildConfig.PROXY_API_KEY
+
+    // Stable device identifier for per-device rate limiting.
+    private val deviceId: String = UUID.randomUUID().toString()
 
     private val client: HttpClient by lazy { createClient() }
 
@@ -29,12 +35,26 @@ object ProxyService {
             require(baseUrl.startsWith("https://")) {
                 "PROXY_BASE_URL must use HTTPS in release builds: $baseUrl"
             }
+            require(apiKey.isNotBlank()) {
+                "PROXY_API_KEY must be set for release builds"
+            }
         }
     }
 
     private fun createClient(): HttpClient {
         val jsonConfig = Json { ignoreUnknownKeys = true }
         val pins = CertificatePinningConfig.parsePins(BuildConfig.PROXY_CERTIFICATE_PINS)
+        val defaultHeadersBlock: io.ktor.client.HttpClientConfig<*>.() -> Unit = {
+            install(ContentNegotiation) {
+                json(jsonConfig)
+            }
+            defaultRequest {
+                header("x-device-id", deviceId)
+                if (apiKey.isNotBlank()) {
+                    header("x-api-key", apiKey)
+                }
+            }
+        }
         return if (!BuildConfig.DEBUG && pins.isNotEmpty()) {
             // Release build with pinned certificates → OkHttp engine
             val hostname = baseUrl.removePrefix("https://").removePrefix("http://").split("/").first()
@@ -47,16 +67,12 @@ object ProxyService {
                         }
                     }
                 }
-                install(ContentNegotiation) {
-                    json(jsonConfig)
-                }
+                defaultHeadersBlock()
             }
         } else {
             // Debug or no pins → default Android engine
             HttpClient(Android) {
-                install(ContentNegotiation) {
-                    json(jsonConfig)
-                }
+                defaultHeadersBlock()
             }
         }
     }

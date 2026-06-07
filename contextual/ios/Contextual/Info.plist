@@ -67,5 +67,7 @@
     <string>http://localhost:8000</string>
     <key>PROXY_CERTIFICATE_PINS</key>
     <string></string>
+    <key>PROXY_API_KEY</key>
+    <string></string>
 </dict>
 </plist>

@@ -3,11 +3,15 @@ import CoreLocation
 
 /// Thin proxy client for Mapbox geocoding and routing.
 /// API keys are protected server-side; mobile never sees them.
+import UIKit
+
 actor ProxyService {
     static let shared = ProxyService()
 
     private let baseURL: URL
     private let session: URLSession
+    private let apiKey: String
+    private let deviceId: String
 
     private init() {
         let proxyURL = Bundle.main.object(forInfoDictionaryKey: "PROXY_BASE_URL") as? String ?? "http://localhost:8000"
@@ -21,12 +25,32 @@ actor ProxyService {
         #endif
         self.baseURL = url
 
+        // API key is optional in dev (proxy allows empty key), required in release.
+        self.apiKey = Bundle.main.object(forInfoDictionaryKey: "PROXY_API_KEY") as? String ?? ""
+        #if !DEBUG
+        guard !self.apiKey.isEmpty else {
+            fatalError("PROXY_API_KEY must be set in Info.plist for release builds")
+        }
+        #endif
+
+        // Stable device identifier for per-device rate limiting.
+        self.deviceId = UIDevice.current.identifierForVendor?.uuidString
+            ?? UUID().uuidString
+
         // Use pinned session in release builds when certificate pins are configured.
         let pins = Bundle.main.object(forInfoDictionaryKey: "PROXY_CERTIFICATE_PINS") as? String ?? ""
         if !pins.isEmpty {
             self.session = URLSession(configuration: .default, delegate: CertificatePinning.shared, delegateQueue: nil)
         } else {
             self.session = URLSession(configuration: .default)
+        }
+    }
+
+    /// Apply shared proxy headers (x-api-key, x-device-id) to a URLRequest.
+    private func applyProxyHeaders(to request: inout URLRequest) {
+        request.setValue(deviceId, forHTTPHeaderField: "x-device-id")
+        if !apiKey.isEmpty {
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         }
     }
 
@@ -110,6 +134,7 @@ actor ProxyService {
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent("geocode"))
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyProxyHeaders(to: &urlRequest)
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await session.data(for: urlRequest)
@@ -133,7 +158,9 @@ actor ProxyService {
             throw ProxyError.invalidResponse
         }
 
-        let (data, response) = try await session.data(from: url)
+        var urlRequest = URLRequest(url: url)
+        applyProxyHeaders(to: &urlRequest)
+        let (data, response) = try await session.data(for: urlRequest)
         try checkResponse(response, data: data)
 
         struct ReverseResponse: Codable {
@@ -185,6 +212,7 @@ actor ProxyService {
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent("route"))
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyProxyHeaders(to: &urlRequest)
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await session.data(for: urlRequest)
