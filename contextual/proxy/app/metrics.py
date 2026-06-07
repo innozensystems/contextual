@@ -34,7 +34,7 @@ CACHE_MISSES_TOTAL = Counter(
 RATE_LIMIT_HITS_TOTAL = Counter(
     "proxy_rate_limit_hits_total",
     "Rate-limited requests",
-    ["device_id"],
+    ["endpoint"],
 )
 
 REDIS_ERRORS_TOTAL = Counter(
@@ -78,8 +78,8 @@ def observe_cache_miss(endpoint: str) -> None:
     CACHE_MISSES_TOTAL.labels(endpoint=endpoint).inc()
 
 
-def observe_rate_limit(device_id: str) -> None:
-    RATE_LIMIT_HITS_TOTAL.labels(device_id=device_id).inc()
+def observe_rate_limit(endpoint: str) -> None:
+    RATE_LIMIT_HITS_TOTAL.labels(endpoint=endpoint).inc()
 
 
 def observe_redis_error(operation: str) -> None:

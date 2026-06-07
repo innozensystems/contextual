@@ -70,11 +70,12 @@ app = FastAPI(title="Contextual Proxy", version="1.0.0")
 
 # CORS: configurable via CORS_ORIGINS env var (comma-separated, or * for dev)
 # Credentials are disabled when wildcard is used to prevent credentialed XSS.
-if settings.cors_origins == "*":
+_raw_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+if "*" in _raw_origins or settings.cors_origins == "*":
     _cors_origins = ["*"]
     _allow_credentials = False
 else:
-    _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    _cors_origins = _raw_origins
     _allow_credentials = True
 
 app.add_middleware(
@@ -209,7 +210,7 @@ async def rate_limit_dependency(request: Request):
     if not device_id or not _DEVICE_ID_RE.match(device_id):
         raise HTTPException(status_code=400, detail="Missing or invalid x-device-id header.")
     if not await _check_rate_limit(device_id):
-        metrics.observe_rate_limit(device_id)
+        metrics.observe_rate_limit(request.url.path)
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
 
 
@@ -232,7 +233,7 @@ def _cache_key(prefix: str, params: dict) -> str:
 
 def _safe_detail(text: str) -> str:
     """Redact sensitive tokens from upstream error text before forwarding."""
-    redacted = re.sub(r"(access_token|token|key|password|secret)=[^\s&]+", r"\1=<redacted>", text, flags=re.IGNORECASE)
+    redacted = re.sub(r"(access_token|token|key|password|secret)=[^\s&]*", r"\1=<redacted>", text, flags=re.IGNORECASE)
     return redacted[:200]
 
 
