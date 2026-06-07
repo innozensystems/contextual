@@ -398,19 +398,15 @@ def test_geocode_mapbox_500(mock_mapbox_token, fake_redis):
 
 @respx.mock
 def test_geocode_mapbox_timeout(mock_mapbox_token, fake_redis):
-    """Mapbox timeout: proxy doesn't catch httpx exceptions, they crash through as 500.
-
-    NOTE: respx side_effect wraps the exception in SideEffectError, so the test
-    client itself raises. In production, FastAPI would catch httpx.ConnectTimeout
-    and return 500. The proxy should handle this gracefully (return 502).
-    """
+    """Mapbox timeout should return 502 instead of crashing."""
     import httpx
     route = respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
         side_effect=httpx.ConnectTimeout("Connection timed out")
     )
-    # In test client mode, respx re-raises the side_effect exception directly
-    with pytest.raises(httpx.ConnectTimeout):
-        client.post("/geocode", json={"query": "Test"})
+    response = client.post("/geocode", json={"query": "Test"})
+    assert response.status_code == 502
+    assert "timeout" in response.json()["detail"].lower()
+    assert route.called
 
 
 @respx.mock
@@ -421,6 +417,38 @@ def test_reverse_geocode_mapbox_404(mock_mapbox_token, fake_redis):
     )
     response = client.get("/reverse-geocode?lat=37.7749&lng=-122.4194")
     assert response.status_code == 502
+
+
+@respx.mock
+def test_route_mapbox_timeout(mock_mapbox_token, fake_redis):
+    """Mapbox route timeout should return 502."""
+    import httpx
+    route = respx.get(url__regex=r"https://api\.mapbox\.com/directions/v5/.*").mock(
+        side_effect=httpx.ReadTimeout("Read timed out")
+    )
+    response = client.post(
+        "/route",
+        json={
+            "waypoints": [[37.7749, -122.4194], [37.7849, -122.4094]],
+            "optimize": False,
+        },
+    )
+    assert response.status_code == 502
+    assert "timeout" in response.json()["detail"].lower()
+    assert route.called
+
+
+@respx.mock
+def test_reverse_geocode_mapbox_timeout(mock_mapbox_token, fake_redis):
+    """Mapbox reverse geocode timeout should return 502."""
+    import httpx
+    route = respx.get("https://api.mapbox.com/search/searchbox/v1/reverse").mock(
+        side_effect=httpx.ConnectTimeout("Connection timed out")
+    )
+    response = client.get("/reverse-geocode?lat=37.7749&lng=-122.4194")
+    assert response.status_code == 502
+    assert "timeout" in response.json()["detail"].lower()
+    assert route.called
 
 
 @respx.mock
@@ -510,6 +538,31 @@ def test_route_redis_unavailable(mock_mapbox_token):
 # Settings & configuration
 # ---------------------------------------------------------------------------
 
+def test_rate_limit_exceeded(mock_mapbox_token):
+    """After exceeding per-minute limit, subsequent requests return 429."""
+    original_limit = settings.rate_limit_per_minute
+    settings.rate_limit_per_minute = 2  # set very low for test
+    try:
+        with respx.mock:
+            respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
+                return_value=Response(200, json={"features": []})
+            )
+            # First two requests succeed
+            r1 = client.post("/geocode", json={"query": "A"}, headers={"x-device-id": "ratelimit-test"})
+            assert r1.status_code == 200
+            r2 = client.post("/geocode", json={"query": "B"}, headers={"x-device-id": "ratelimit-test"})
+            assert r2.status_code == 200
+
+            # Third request should be rate limited
+            r3 = client.post("/geocode", json={"query": "C"}, headers={"x-device-id": "ratelimit-test"})
+            assert r3.status_code == 429
+            assert "Rate limit" in r3.json()["detail"]
+    finally:
+        settings.rate_limit_per_minute = original_limit
+        # Clear rate limit store for this client
+        main._rate_limit_store.pop("ratelimit-test", None)
+
+
 def test_settings_default_values():
     """Verify Settings defaults are sensible."""
     from app.main import Settings
@@ -519,6 +572,16 @@ def test_settings_default_values():
     assert s.redis_url == "redis://localhost:6379/0"
     assert s.rate_limit_per_minute == 60
     assert s.max_cache_seconds == 86400
+
+
+def test_settings_cors_origins():
+    """Verify CORS origins setting default and parsing."""
+    from app.main import Settings
+    s = Settings()
+    assert s.cors_origins == "*"
+
+    s2 = Settings(cors_origins="https://app.contextual.com,https://admin.contextual.com")
+    assert s2.cors_origins == "https://app.contextual.com,https://admin.contextual.com"
 
 
 def test_cors_allows_all_origins():

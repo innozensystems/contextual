@@ -11,7 +11,7 @@ from typing import Optional
 
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException, Header, Query
+from fastapi import FastAPI, HTTPException, Header, Query, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,24 +23,54 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     max_cache_seconds: int = Field(default=86400, alias="MAX_CACHE_SECONDS")  # 24h
+    cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        populate_by_name=True,
     )
 
 
 settings = Settings()
 app = FastAPI(title="Contextual Proxy", version="1.0.0")
 
-# CORS: allow requests from mobile app origins (adjust for production)
+# CORS: configurable via CORS_ORIGINS env var (comma-separated, or * for dev)
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",")] if settings.cors_origins != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten in production
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# In-memory rate limiter (resets on restart; sufficient for single-instance proxy)
+_rate_limit_store: dict[str, list[float]] = {}
+
+
+def _check_rate_limit(client_id: str) -> bool:
+    """Return True if client is within rate limit, False if exceeded."""
+    now = __import__("time").time()
+    window = 60.0  # seconds
+    max_requests = settings.rate_limit_per_minute
+
+    timestamps = _rate_limit_store.get(client_id, [])
+    # Trim old entries outside the window
+    timestamps = [t for t in timestamps if now - t < window]
+    if len(timestamps) >= max_requests:
+        _rate_limit_store[client_id] = timestamps
+        return False
+    timestamps.append(now)
+    _rate_limit_store[client_id] = timestamps
+    return True
+
+
+async def rate_limit_dependency(request: Request):
+    """Reject requests that exceed per-minute rate limit."""
+    client_id = request.headers.get("x-device-id") or request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_id):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
 
 # Redis client (initialized on first use)
 _redis_client: Optional[redis.Redis] = None
@@ -112,7 +142,11 @@ class RouteResponse(BaseModel):
 # ========================
 
 @app.post("/geocode", response_model=GeocodeResponse)
-async def geocode(req: GeocodeRequest, x_device_id: Optional[str] = Header(default=None)):
+async def geocode(
+    req: GeocodeRequest,
+    x_device_id: Optional[str] = Header(default=None),
+    _rate_limit=Depends(rate_limit_dependency),
+):
     """
     Geocode an address or place name via Mapbox.
     Results are cached for 24 hours.
@@ -142,8 +176,11 @@ async def geocode(req: GeocodeRequest, x_device_id: Optional[str] = Header(defau
 
     # Forward to Mapbox
     url = "https://api.mapbox.com/search/searchbox/v1/forward"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(url, params=params)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=502, detail=f"Mapbox timeout: {exc}")
 
     if resp.status_code != 200:
         raise HTTPException(
@@ -180,6 +217,7 @@ async def reverse_geocode(
     lat: float = Query(..., ge=-90, le=90),
     lng: float = Query(..., ge=-180, le=180),
     x_device_id: Optional[str] = Header(default=None),
+    _rate_limit=Depends(rate_limit_dependency),
 ):
     """Reverse geocode a lat/lng coordinate via Mapbox."""
     if not settings.mapbox_token:
@@ -198,16 +236,19 @@ async def reverse_geocode(
     except Exception:
         pass  # Redis unavailable; fall through to Mapbox
 
-    url = f"https://api.mapbox.com/search/searchbox/v1/reverse"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(
-            url,
-            params={
-                **params,
-                "latitude": lat,
-                "longitude": lng,
-            },
-        )
+    url = "https://api.mapbox.com/search/searchbox/v1/reverse"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                url,
+                params={
+                    **params,
+                    "latitude": lat,
+                    "longitude": lng,
+                },
+            )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=502, detail=f"Mapbox timeout: {exc}")
 
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail=f"Mapbox error: {resp.status_code}")
@@ -238,7 +279,11 @@ async def reverse_geocode(
 
 
 @app.post("/route", response_model=RouteResponse)
-async def route(req: RouteRequest, x_device_id: Optional[str] = Header(default=None)):
+async def route(
+    req: RouteRequest,
+    x_device_id: Optional[str] = Header(default=None),
+    _rate_limit=Depends(rate_limit_dependency),
+):
     """
     Get optimized driving route through waypoints.
     Uses Mapbox Directions API with optional TSP optimization.
@@ -276,8 +321,11 @@ async def route(req: RouteRequest, x_device_id: Optional[str] = Header(default=N
     except Exception:
         pass  # Redis unavailable; fall through to Mapbox
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(url, params=params)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params=params)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=502, detail=f"Mapbox timeout: {exc}")
 
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail=f"Mapbox error: {resp.status_code} {resp.text[:200]}")
