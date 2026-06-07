@@ -1,22 +1,30 @@
 # Changelog
 
-## [1.0.0.1] - 2026-06-07
+All notable changes to the Contextual project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0] - 2026-06-07
 
 ### Added
-- Project README with architecture overview, layout, and security checklist
+- **iOS App** — SwiftUI application with location-aware reminders, task management, and trip optimization
+- **Android App** — Kotlin application with geofencing, notifications, and route optimization
+- **FastAPI Proxy** — Thin proxy with Redis caching, Mapbox integration, and Prometheus metrics
+- **Rate limiting** — Sliding-window per-device rate limiting with atomic Lua scripts
+- **API key auth** — Optional `x-api-key` header enforcement (required in production)
+- **Certificate pinning** — SPKI hash verification on both iOS and Android
+- **CI/CD pipelines** — GitHub Actions for proxy (lint, test, Docker, Trivy), iOS (build, TestFlight), Android (build, Play Store)
+- **Security audit** — Full security review with remediation of critical and high findings
+- **Release documentation** — `RELEASING.md` runbook and `docs/DEPLOYMENT.md` guide
 
-## [1.0.0.0] - 2026-06-06
+### Security
+- CORS wildcard bypass fixed — `*` forces `allow_credentials=False`
+- Prometheus label cardinality safe — `endpoint` label instead of `device_id`
+- Sensitive parameter redaction in logs (`token`, `key`, `password`, `secret`)
+- Trivy action pinned to `@0.28.0`
 
-### Added
-- Initial release of Contextual — context-aware reminder app
-- Native iOS app (Swift + SwiftUI) with context-grouped task list, voice entry, geofencing, notifications
-- Native Android app (Kotlin + Jetpack) with RecyclerView, bottom sheets, Google Maps integration
-- Supabase backend with Postgres + PostGIS, RLS policies, RPC functions for nearby tasks
-- FastAPI thin proxy for Mapbox geocoding, reverse geocoding, and route optimization
-- GitHub Actions CI/CD pipelines for iOS (TestFlight), Android (Play Store Internal), and proxy (Docker)
-- Dynamic geofence swapping (20-region limit on iOS)
-- Smart notification batching with instant complete + 10-second undo
-- Trip threading with inline auto-suggest banner
-- Partner invite flow with deep link support
-- Onboarding flow with permission requests
-- Design system with 8pt grid, system typography, single-accent color palette
+[Unreleased]: https://github.com/innozensystems/contextual/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/innozensystems/contextual/releases/tag/v1.0.0
