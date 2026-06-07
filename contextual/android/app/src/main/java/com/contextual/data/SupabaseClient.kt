@@ -11,18 +11,43 @@ import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.contextual.BuildConfig
+import android.util.Log
 
 object SupabaseClient {
     private var client: SupabaseClient? = null
 
     fun init(context: Context) {
+        val url = BuildConfig.SUPABASE_URL
+        val key = BuildConfig.SUPABASE_ANON_KEY
+        require(url.isNotBlank() && url.startsWith("http")) {
+            "SUPABASE_URL is not configured. Set SUPABASE_URL in environment before building."
+        }
+        require(key.isNotBlank()) {
+            "SUPABASE_ANON_KEY is not configured. Set SUPABASE_ANON_KEY in environment before building."
+        }
         client = createSupabaseClient(
-            supabaseUrl = BuildConfig.SUPABASE_URL,
-            supabaseKey = BuildConfig.SUPABASE_ANON_KEY
+            supabaseUrl = url,
+            supabaseKey = key
         ) {
-            // Default configuration
+            install(io.github.jan.supabase.gotrue.Auth) {
+                // Default auth configuration
+            }
         }
     }
+
+    suspend fun signInAnonymous(): String? {
+        return try {
+            client?.auth?.signInAnonymously()
+            val user = client?.auth?.currentUserOrNull()
+            Log.d("SupabaseClient", "Signed in anonymously as ${user?.id}")
+            user?.id
+        } catch (e: Exception) {
+            Log.e("SupabaseClient", "Anonymous sign-in failed", e)
+            null
+        }
+    }
+
+    fun currentUserId(): String? = client?.auth?.currentUserOrNull()?.id
 
     fun get(): SupabaseClient = client ?: throw IllegalStateException("SupabaseClient not initialized")
 

@@ -162,7 +162,8 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
                 binding.saveButton.isEnabled = false
                 binding.errorText.visibility = View.GONE
 
-                val userId = "current-user-id" // Get from auth
+                val userId = SupabaseClient.currentUserId()
+                    ?: throw IllegalStateException("Not signed in — enable anonymous auth in Supabase")
                 var locationId: String? = null
 
                 selectedLocation?.let { loc ->
@@ -188,10 +189,18 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
 
                 SupabaseClient.createTask(task)
                 dismiss()
-            } catch (e: Exception) {
-                binding.errorText.text = "Failed to save — will retry when online"
+            } catch (e: IllegalStateException) {
+                val msg = e.message ?: "Configuration error"
+                binding.errorText.text = msg
                 binding.errorText.visibility = View.VISIBLE
-                Toast.makeText(requireContext(), "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+                android.util.Log.e("AddTask", "Save failed (config)", e)
+            } catch (e: Exception) {
+                val msg = e.message ?: "Unknown error"
+                binding.errorText.text = "Failed to save: $msg"
+                binding.errorText.visibility = View.VISIBLE
+                Toast.makeText(requireContext(), "Save failed: $msg", Toast.LENGTH_LONG).show()
+                android.util.Log.e("AddTask", "Save failed", e)
             } finally {
                 binding.saveButton.isEnabled = true
             }

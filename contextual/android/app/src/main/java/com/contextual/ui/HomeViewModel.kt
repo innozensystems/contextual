@@ -28,12 +28,14 @@ class HomeViewModel : ViewModel() {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                // In production, get current user ID from auth
-                val fetched = SupabaseClient.fetchTasks("current-user-id")
+                val userId = SupabaseClient.currentUserId()
+                    ?: SupabaseClient.signInAnonymous()
+                    ?: throw IllegalStateException("Not signed in — enable anonymous auth in Supabase")
+                val fetched = SupabaseClient.fetchTasks(userId)
                 _tasks.value = fetched
                 checkTripOpportunities()
             } catch (e: Exception) {
-                _errorMessage.value = "Can't load tasks — pull to retry"
+                _errorMessage.value = e.message ?: "Can't load tasks — pull to retry"
             } finally {
                 _isLoading.value = false
             }
