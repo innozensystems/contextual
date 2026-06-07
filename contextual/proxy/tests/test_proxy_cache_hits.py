@@ -9,7 +9,7 @@ from httpx import Response
 from app import main
 from app.main import app, settings
 
-client = TestClient(app)
+client = TestClient(app, headers={"x-device-id": "test-device-12345"})
 
 
 @pytest.fixture(autouse=True)

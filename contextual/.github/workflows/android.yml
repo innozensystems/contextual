@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'contextual/android/**'
-      - 'contextual/proxy/**'
+      - 'android/**'
+      - 'proxy/**'
   pull_request:
     branches: [main]
     paths:
-      - 'contextual/android/**'
+      - 'android/**'
 
 jobs:
   build:
@@ -28,19 +28,24 @@ jobs:
 
       - name: Build
         run: |
-          cd contextual/android
+          cd android
           ./gradlew assembleRelease
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROXY_BASE_URL: ${{ secrets.PROXY_BASE_URL }}
+          PROXY_CERTIFICATE_PINS: ${{ secrets.PROXY_CERTIFICATE_PINS }}
 
       - name: Run tests
         run: |
-          cd contextual/android
+          cd android
           ./gradlew test
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: android-release-apk
-          path: contextual/android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/*.apk
 
   deploy:
     needs: build
@@ -54,11 +59,16 @@ jobs:
         with:
           ruby-version: '3.2'
           bundler-cache: true
-          working-directory: contextual/android
+          working-directory: android
 
       - name: Deploy to Play Store Internal
         run: |
-          cd contextual/android
+          cd android
           bundle exec fastlane deploy_internal
         env:
           PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          CI_RELEASE: "true"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROXY_BASE_URL: ${{ secrets.PROXY_BASE_URL }}
+          PROXY_CERTIFICATE_PINS: ${{ secrets.PROXY_CERTIFICATE_PINS }}

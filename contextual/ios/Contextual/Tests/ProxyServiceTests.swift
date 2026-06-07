@@ -152,4 +152,38 @@ final class ProxyServiceTests: XCTestCase {
         let body = try JSONDecoder().decode(ProxyService.ErrorBody.self, from: json)
         XCTAssertEqual(body.detail, "Rate limit exceeded")
     }
+
+    // MARK: - Certificate Pinning
+
+    func testCertificatePinningParsesPins() {
+        let pins = CertificatePinning.parsePins("pin1, pin2 ,pin3")
+        XCTAssertEqual(pins, Set(["pin1", "pin2", "pin3"]))
+    }
+
+    func testCertificatePinningParsesEmptyPins() {
+        let pins = CertificatePinning.parsePins("")
+        XCTAssertTrue(pins.isEmpty)
+    }
+
+    func testCertificatePinningSha256Base64() {
+        let data = Data("hello".utf8)
+        let hash = CertificatePinning.sha256Base64(data: data)
+        // Known SHA-256("hello") base64
+        XCTAssertEqual(hash, "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=")
+    }
+
+    func testCertificatePinningMatchesAllowedPin() {
+        let data = Data("test".utf8)
+        let hash = CertificatePinning.sha256Base64(data: data)
+        let pinner = CertificatePinning(pins: [hash])
+        // We can't easily mock SecTrust in unit tests, but we can verify the pin set membership
+        XCTAssertTrue(pinner.allowedPins.contains(hash))
+    }
+
+    func testProxyErrorCertificatePinningMessage() {
+        XCTAssertEqual(
+            ProxyService.ProxyError.certificatePinningFailed.userMessage,
+            "Secure connection could not be established. Contact support."
+        )
+    }
 }

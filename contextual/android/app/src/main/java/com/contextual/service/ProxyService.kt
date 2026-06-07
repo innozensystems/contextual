@@ -1,9 +1,11 @@
 package com.contextual.service
 
 import com.contextual.BuildConfig
+import com.contextual.util.CertificatePinningConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.android.Android
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -17,13 +19,47 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 object ProxyService {
-    private val client = HttpClient(Android) {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+
+    private val baseUrl = BuildConfig.PROXY_BASE_URL
+
+    private val client: HttpClient by lazy { createClient() }
+
+    init {
+        if (!BuildConfig.DEBUG) {
+            require(baseUrl.startsWith("https://")) {
+                "PROXY_BASE_URL must use HTTPS in release builds: $baseUrl"
+            }
         }
     }
 
-    private val baseUrl = BuildConfig.PROXY_BASE_URL
+    private fun createClient(): HttpClient {
+        val jsonConfig = Json { ignoreUnknownKeys = true }
+        val pins = CertificatePinningConfig.parsePins(BuildConfig.PROXY_CERTIFICATE_PINS)
+        return if (!BuildConfig.DEBUG && pins.isNotEmpty()) {
+            // Release build with pinned certificates → OkHttp engine
+            val hostname = baseUrl.removePrefix("https://").removePrefix("http://").split("/").first()
+            val pinner = CertificatePinningConfig.createPinner(hostname, pins)
+            HttpClient(OkHttp) {
+                engine {
+                    config {
+                        if (pinner != null) {
+                            certificatePinner(pinner)
+                        }
+                    }
+                }
+                install(ContentNegotiation) {
+                    json(jsonConfig)
+                }
+            }
+        } else {
+            // Debug or no pins → default Android engine
+            HttpClient(Android) {
+                install(ContentNegotiation) {
+                    json(jsonConfig)
+                }
+            }
+        }
+    }
 
     @Serializable
     data class GeocodeRequest(
@@ -59,6 +95,7 @@ object ProxyService {
         class NotFound(detail: String?) : ProxyException(detail ?: "No results found.")
         class BadRequest(detail: String?) : ProxyException(detail ?: "Invalid request.")
         class HttpError(val status: Int, detail: String?) : ProxyException(detail ?: "Server error $status.")
+        class CertificatePinningFailed : ProxyException("Secure connection could not be established. Contact support.")
     }
 
     private suspend inline fun <reified T> safeRequest(block: () -> T): T {

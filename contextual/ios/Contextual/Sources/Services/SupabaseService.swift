@@ -12,12 +12,31 @@ final class SupabaseService: ObservableObject {
     @Published var isAuthenticated = false
 
     private init() {
-        // Replace with your Supabase project URL and anon key
-        let urlString = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String ?? "https://your-project.supabase.co"
+        let rawUrl = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String
+        let rawKey = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String
+
+        let urlString: String
+        let supabaseKey: String
+
+        #if DEBUG
+        // Debug builds may use placeholder values if Info.plist is not configured.
+        urlString = rawUrl?.isEmpty == false ? rawUrl! : "https://your-project.supabase.co"
+        supabaseKey = rawKey?.isEmpty == false ? rawKey! : "your-anon-key"
+        #else
+        // Release builds must have real secrets injected at build time.
+        guard let u = rawUrl, !u.isEmpty else {
+            fatalError("SUPABASE_URL must be configured in Info.plist for release builds. Do not commit real credentials.")
+        }
+        guard let k = rawKey, !k.isEmpty else {
+            fatalError("SUPABASE_ANON_KEY must be configured in Info.plist for release builds. Do not commit real credentials.")
+        }
+        urlString = u
+        supabaseKey = k
+        #endif
+
         guard let supabaseURL = URL(string: urlString) else {
             fatalError("Invalid SUPABASE_URL in Info.plist: \(urlString)")
         }
-        let supabaseKey = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String ?? "your-anon-key"
 
         self.client = SupabaseClient(
             supabaseURL: supabaseURL,

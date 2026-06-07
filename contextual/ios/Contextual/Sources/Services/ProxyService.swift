@@ -14,8 +14,20 @@ actor ProxyService {
         guard let url = URL(string: proxyURL) else {
             fatalError("Invalid PROXY_BASE_URL in Info.plist: \(proxyURL)")
         }
+        #if !DEBUG
+        guard url.scheme == "https" else {
+            fatalError("PROXY_BASE_URL must use HTTPS in release builds: \(proxyURL)")
+        }
+        #endif
         self.baseURL = url
-        self.session = URLSession(configuration: .default)
+
+        // Use pinned session in release builds when certificate pins are configured.
+        let pins = Bundle.main.object(forInfoDictionaryKey: "PROXY_CERTIFICATE_PINS") as? String ?? ""
+        if !pins.isEmpty {
+            self.session = URLSession(configuration: .default, delegate: CertificatePinning.shared, delegateQueue: nil)
+        } else {
+            self.session = URLSession(configuration: .default)
+        }
     }
 
     // MARK: - Geocode
@@ -189,6 +201,7 @@ actor ProxyService {
         case notFound(String?)
         case badRequest(String?)
         case httpError(status: Int, detail: String?)
+        case certificatePinningFailed
 
         var userMessage: String {
             switch self {
@@ -206,6 +219,8 @@ actor ProxyService {
                 return detail ?? "Invalid request."
             case .httpError(let status, let detail):
                 return detail ?? "Server error \(status)."
+            case .certificatePinningFailed:
+                return "Secure connection could not be established. Contact support."
             }
         }
     }

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app, settings
 
-client = TestClient(app)
+client = TestClient(app, headers={"x-device-id": "test-device-12345"})
 
 
 def test_health():

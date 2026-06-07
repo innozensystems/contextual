@@ -128,4 +128,12 @@ class ProxyServiceTest {
         assertEquals("Slow down", ProxyService.ProxyException.RateLimited("Slow down").message)
         assertEquals("Mapbox timeout", ProxyService.ProxyException.MapboxUnavailable("Mapbox timeout").message)
     }
+
+    @Test
+    fun `certificate pinning failed message is user friendly`() {
+        assertEquals(
+            "Secure connection could not be established. Contact support.",
+            ProxyService.ProxyException.CertificatePinningFailed().message
+        )
+    }
 }

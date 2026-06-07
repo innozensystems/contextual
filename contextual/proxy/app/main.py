@@ -1,28 +1,35 @@
 """
 Contextual Thin Proxy
-FastAPI app that proxies Mapbox/Google Places APIs,
+FastAPI app that proxies Mapbox APIs,
 caches results in Redis, and protects API keys.
 """
 
 import hashlib
 import json
+import logging
+import re
+import time
 from typing import Optional
 
 import httpx
 import redis.asyncio as redis
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from redis.exceptions import ResponseError
+from starlette.responses import JSONResponse
+
+from app import metrics
 
 
 class Settings(BaseSettings):
     mapbox_token: str = Field(default="", alias="MAPBOX_TOKEN")
-    google_places_api_key: str = Field(default="", alias="GOOGLE_PLACES_API_KEY")
-    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     max_cache_seconds: int = Field(default=86400, alias="MAX_CACHE_SECONDS")  # 24h
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
+    require_redis_tls: bool = Field(default=False, alias="REQUIRE_REDIS_TLS")
+    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -30,45 +37,179 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
+    @field_validator("redis_url")
+    @classmethod
+    def _redis_url_must_use_tls_when_required(cls, v: str, info) -> str:
+        values = info.data
+        if values.get("require_redis_tls") and not v.startswith("rediss://"):
+            raise ValueError(
+                "REQUIRE_REDIS_TLS is enabled but REDIS_URL does not use rediss://. "
+                "Configure your Redis provider to use TLS (e.g., rediss://host:6379/0)."
+            )
+        return v
+
 
 settings = Settings()
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+_log_handler = logging.StreamHandler()
+if settings.cors_origins != "*":  # production-ish
+    _log_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+else:
+    _log_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"))
+
+logger = logging.getLogger("contextual.proxy")
+logger.setLevel(logging.INFO)
+logger.addHandler(_log_handler)
+logger.propagate = False
+
 app = FastAPI(title="Contextual Proxy", version="1.0.0")
 
 # CORS: configurable via CORS_ORIGINS env var (comma-separated, or * for dev)
-_cors_origins = [o.strip() for o in settings.cors_origins.split(",")] if settings.cors_origins != "*" else ["*"]
+# Credentials are disabled when wildcard is used to prevent credentialed XSS.
+if settings.cors_origins == "*":
+    _cors_origins = ["*"]
+    _allow_credentials = False
+else:
+    _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    _allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# In-memory rate limiter (resets on restart; sufficient for single-instance proxy)
-_rate_limit_store: dict[str, list[float]] = {}
+
+# Metrics middleware: count requests by method + endpoint + status
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    route = request.url.path
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        metrics.observe_request(request.method, route, status)
 
 
-def _check_rate_limit(client_id: str) -> bool:
-    """Return True if client is within rate limit, False if exceeded."""
-    now = __import__("time").time()
+# Security headers
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+# Request body size limit (64KB)
+class MaxBodySizeMiddleware:
+    def __init__(self, app, max_size: int = 65536):
+        self.app = app
+        self.max_size = max_size
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":  # pragma: no cover
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.max_size:
+                    response = JSONResponse(
+                        {"detail": "Request body too large"},
+                        status_code=413,
+                    )
+                    await response(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(MaxBodySizeMiddleware)
+
+_DEVICE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{16,128}$")
+
+# Atomic Lua script for sliding-window rate limiting.
+# Returns 1 if the request is allowed, 0 if the limit is exceeded.
+_RATE_LIMIT_LUA = """
+local key = KEYS[1]
+local window_start = tonumber(ARGV[1])
+local now = tonumber(ARGV[2])
+local max_requests = tonumber(ARGV[3])
+local expire = tonumber(ARGV[4])
+
+redis.call("zremrangebyscore", key, 0, window_start)
+local count = redis.call("zcard", key)
+if count >= max_requests then
+    return 0
+end
+redis.call("zadd", key, now, now)
+redis.call("expire", key, expire)
+return 1
+"""
+
+
+async def _check_rate_limit(client_id: str) -> bool:
+    """Return True if client is within rate limit, False if exceeded.
+    Uses an atomic Redis Lua script for a shared sliding window across all
+    instances. Falls back to a non-atomic pipeline when the Redis provider
+    does not support EVAL (e.g., some serverless/test backends).
+    Falls open (allows request) if Redis is unavailable.
+    """
+    now = time.monotonic()
     window = 60.0  # seconds
     max_requests = settings.rate_limit_per_minute
+    key = f"ratelimit:{client_id}"
 
-    timestamps = _rate_limit_store.get(client_id, [])
-    # Trim old entries outside the window
-    timestamps = [t for t in timestamps if now - t < window]
-    if len(timestamps) >= max_requests:
-        _rate_limit_store[client_id] = timestamps
-        return False
-    timestamps.append(now)
-    _rate_limit_store[client_id] = timestamps
-    return True
+    try:
+        r = await get_redis()
+        # Attempt atomic Lua script first (production Redis)
+        try:
+            result = await r.eval(
+                _RATE_LIMIT_LUA,
+                1,
+                key,
+                now - window,
+                now,
+                max_requests,
+                int(window),
+            )
+            return bool(result)
+        except ResponseError as exc:
+            if "unknown command 'eval'" in str(exc).lower():
+                # Fallback for Redis backends that don't support Lua (e.g. fakeredis)
+                pipe = r.pipeline()
+                pipe.zremrangebyscore(key, 0, now - window)
+                pipe.zcard(key)
+                _, count = await pipe.execute()
+                if count >= max_requests:
+                    return False
+                await r.zadd(key, {str(now): now})
+                await r.expire(key, int(window))
+                return True
+            raise
+    except Exception:
+        # Redis unavailable — fail open to avoid total outage
+        return True
 
 
 async def rate_limit_dependency(request: Request):
     """Reject requests that exceed per-minute rate limit."""
-    client_id = request.headers.get("x-device-id") or request.client.host if request.client else "unknown"
-    if not _check_rate_limit(client_id):
+    device_id = request.headers.get("x-device-id")
+    if not device_id or not _DEVICE_ID_RE.match(device_id):
+        raise HTTPException(status_code=400, detail="Missing or invalid x-device-id header.")
+    if not await _check_rate_limit(device_id):
+        metrics.observe_rate_limit(device_id)
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
 
 
@@ -87,6 +228,12 @@ def _cache_key(prefix: str, params: dict) -> str:
     """Deterministic cache key from sorted params."""
     payload = json.dumps(params, sort_keys=True, separators=(",", ":"))
     return f"ctx:{prefix}:{hashlib.sha256(payload.encode()).hexdigest()[:16]}"
+
+
+def _safe_detail(text: str) -> str:
+    """Redact sensitive tokens from upstream error text before forwarding."""
+    redacted = re.sub(r"(access_token|token|key|password|secret)=[^\s&]+", r"\1=<redacted>", text, flags=re.IGNORECASE)
+    return redacted[:200]
 
 
 # ========================
@@ -170,22 +317,27 @@ async def geocode(
         cached = await r.get(cache_key)
         if cached:
             data = json.loads(cached)
+            metrics.observe_cache_hit("/geocode")
             return GeocodeResponse(results=[GeocodeResult(**r) for r in data], cached=True)
     except Exception:
+        metrics.observe_redis_error("get")
         pass  # Redis unavailable; fall through to Mapbox
 
     # Forward to Mapbox
     url = "https://api.mapbox.com/search/searchbox/v1/forward"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
+        with metrics.mapbox_timer("/geocode"):
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
     except httpx.TimeoutException as exc:
+        metrics.observe_mapbox_error("/geocode", 504)
         raise HTTPException(status_code=502, detail=f"Mapbox timeout: {exc}")
 
     if resp.status_code != 200:
+        metrics.observe_mapbox_error("/geocode", resp.status_code)
         raise HTTPException(
             status_code=502,
-            detail=f"Mapbox error: {resp.status_code} {resp.text[:200]}",
+            detail=f"Mapbox error: {resp.status_code} {_safe_detail(resp.text)}",
         )
 
     mb_data = resp.json()
@@ -203,6 +355,8 @@ async def geocode(
             )
         )
 
+    metrics.observe_cache_miss("/geocode")
+
     # Cache raw result
     try:
         r = await get_redis()
@@ -212,6 +366,7 @@ async def geocode(
             json.dumps([r.model_dump() for r in results]),
         )
     except Exception:
+        metrics.observe_redis_error("setex")
         pass  # Redis unavailable; skip caching
 
     return GeocodeResponse(results=results, cached=False)
@@ -237,26 +392,31 @@ async def reverse_geocode(
         cached = await r.get(cache_key)
         if cached:
             data = json.loads(cached)
+            metrics.observe_cache_hit("/reverse-geocode")
             return {"result": data, "cached": True}
     except Exception:
+        metrics.observe_redis_error("get")
         pass  # Redis unavailable; fall through to Mapbox
 
     url = "https://api.mapbox.com/search/searchbox/v1/reverse"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                url,
-                params={
-                    **params,
-                    "latitude": lat,
-                    "longitude": lng,
-                },
-            )
+        with metrics.mapbox_timer("/reverse-geocode"):
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    url,
+                    params={
+                        **params,
+                        "latitude": lat,
+                        "longitude": lng,
+                    },
+                )
     except httpx.TimeoutException as exc:
+        metrics.observe_mapbox_error("/reverse-geocode", 504)
         raise HTTPException(status_code=502, detail=f"Mapbox timeout: {exc}")
 
     if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Mapbox error: {resp.status_code}")
+        metrics.observe_mapbox_error("/reverse-geocode", resp.status_code)
+        raise HTTPException(status_code=502, detail=f"Mapbox error: {resp.status_code} {_safe_detail(resp.text)}")
 
     mb_data = resp.json()
     features = mb_data.get("features", [])
@@ -274,10 +434,13 @@ async def reverse_geocode(
         "place_id": props.get("mapbox_id"),
     }
 
+    metrics.observe_cache_miss("/reverse-geocode")
+
     try:
         r = await get_redis()
         await r.setex(cache_key, settings.max_cache_seconds, json.dumps(result))
     except Exception:
+        metrics.observe_redis_error("setex")
         pass  # Redis unavailable; skip caching
 
     return {"result": result, "cached": False}
@@ -325,20 +488,25 @@ async def route(
         if cached:
             data = json.loads(cached)
             data["cached"] = True
+            metrics.observe_cache_hit("/route")
             return RouteResponse(**data)
     except Exception:
+        metrics.observe_redis_error("get")
         pass  # Redis unavailable; fall through to Mapbox
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params)
+        with metrics.mapbox_timer("/route"):
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(url, params=params)
     except httpx.TimeoutException as exc:
+        metrics.observe_mapbox_error("/route", 504)
         raise HTTPException(status_code=502, detail=f"Mapbox timeout: {exc}")
 
     if resp.status_code != 200:
+        metrics.observe_mapbox_error("/route", resp.status_code)
         raise HTTPException(
             status_code=502,
-            detail=f"Mapbox error: {resp.status_code} {resp.text[:200]}",
+            detail=f"Mapbox error: {resp.status_code} {_safe_detail(resp.text)}",
         )
 
     mb_data = resp.json()
@@ -376,10 +544,13 @@ async def route(
         cached=False,
     )
 
+    metrics.observe_cache_miss("/route")
+
     try:
         r = await get_redis()
         await r.setex(cache_key, settings.max_cache_seconds, json.dumps(response.model_dump()))
     except Exception:
+        metrics.observe_redis_error("setex")
         pass  # Redis unavailable; skip caching
 
     return response
@@ -387,10 +558,25 @@ async def route(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    """Health check enriched with Redis connectivity status."""
+    redis_status = "unknown"
+    try:
+        r = await get_redis()
+        await r.ping()
+        redis_status = "connected"
+    except Exception:
+        redis_status = "unavailable"
+    return {"status": "ok", "redis": redis_status}
 
 
-if __name__ == "__main__":
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus-compatible metrics endpoint."""
+    body, content_type = metrics.render_latest()
+    return Response(content=body, media_type=content_type)
+
+
+if __name__ == "__main__":  # pragma: no cover
     import uvicorn
 
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

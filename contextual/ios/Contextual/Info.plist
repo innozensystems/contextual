@@ -46,6 +46,11 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
     <string>We use your location to remind you at the right place. Your data stays on your device.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
@@ -55,10 +60,12 @@
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Speech recognition is used for voice task entry. Audio is processed on-device.</string>
     <key>SUPABASE_URL</key>
-    <string>https://your-project.supabase.co</string>
+    <string></string>
     <key>SUPABASE_ANON_KEY</key>
-    <string>your-anon-key</string>
+    <string></string>
     <key>PROXY_BASE_URL</key>
     <string>http://localhost:8000</string>
+    <key>PROXY_CERTIFICATE_PINS</key>
+    <string></string>
 </dict>
 </plist>

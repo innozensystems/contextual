@@ -16,9 +16,17 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        buildConfigField("String", "SUPABASE_URL", "\"https://your-project.supabase.co\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"your-anon-key\"")
-        buildConfigField("String", "PROXY_BASE_URL", "\"http://localhost:8000\"")
+        // Secrets are injected via environment variables in CI (never commit real credentials).
+        // For local development, set SUPABASE_URL and SUPABASE_ANON_KEY in your shell or local.properties.
+        val supabaseUrl = System.getenv("SUPABASE_URL") ?: ""
+        val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: ""
+        val proxyBaseUrl = System.getenv("PROXY_BASE_URL") ?: "http://localhost:8000"
+        val proxyPins = System.getenv("PROXY_CERTIFICATE_PINS") ?: ""
+
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "PROXY_BASE_URL", "\"$proxyBaseUrl\"")
+        buildConfigField("String", "PROXY_CERTIFICATE_PINS", "\"$proxyPins\"")
     }
 
     buildFeatures {
@@ -34,6 +42,28 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+
+    // Validate that secrets are injected before actual release builds.
+    // Skipped in CI unless CI_RELEASE=true (set only in the deploy job).
+    tasks.register("validateReleaseSecrets") {
+        onlyIf { System.getenv("CI_RELEASE") == "true" }
+        doLast {
+            val supabaseUrl = System.getenv("SUPABASE_URL") ?: ""
+            val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: ""
+            require(supabaseUrl.isNotBlank()) {
+                "SUPABASE_URL must be set via environment variable for release builds. " +
+                "Do not commit real credentials to the repository."
+            }
+            require(supabaseAnonKey.isNotBlank()) {
+                "SUPABASE_ANON_KEY must be set via environment variable for release builds. " +
+                "Do not commit real credentials to the repository."
+            }
+        }
+    }
+
+    tasks.named("assembleRelease").configure {
+        dependsOn("validateReleaseSecrets")
     }
 
     compileOptions {
@@ -71,6 +101,7 @@ dependencies {
 
     // Networking
     implementation("io.ktor:ktor-client-android:2.3.7")
+    implementation("io.ktor:ktor-client-okhttp:2.3.7")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.7")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.7")
 

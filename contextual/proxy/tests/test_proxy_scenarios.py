@@ -13,7 +13,7 @@ from httpx import Response
 from app import main
 from app.main import app, settings
 
-client = TestClient(app)
+client = TestClient(app, headers={"x-device-id": "test-device-12345"})
 
 
 # ---------------------------------------------------------------------------
@@ -150,12 +150,12 @@ def test_cors_preflight():
     assert "access-control-allow-origin" in response.headers
 
 
-def test_health_returns_version():
-    """Health endpoint should include version."""
+def test_health_no_version():
+    """Health endpoint should not expose version to reduce attack surface."""
     response = client.get("/health")
     data = response.json()
-    assert "version" in data
-    assert data["version"] == "1.0.0"
+    assert "status" in data
+    assert "version" not in data
 
 
 # ---------------------------------------------------------------------------
@@ -595,34 +595,198 @@ def test_route_redis_unavailable(mock_mapbox_token):
         main.get_redis = original
 
 
+def test_rate_limit_redis_unavailable(mock_mapbox_token):
+    """Rate limiter fails open (allows request) when Redis is unavailable."""
+    original = main.get_redis
+    original_limit = settings.rate_limit_per_minute
+    settings.rate_limit_per_minute = 1  # very low limit
+
+    async def broken():
+        raise ConnectionError("Redis down")
+
+    main.get_redis = broken
+    try:
+        with respx.mock:
+            respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
+                return_value=Response(200, json={"features": []})
+            )
+            # Both requests should succeed because Redis is down → fail open
+            r1 = client.post("/geocode", json={"query": "A"}, headers={"x-device-id": "redis-down-device"})
+            assert r1.status_code == 200
+            r2 = client.post("/geocode", json={"query": "B"}, headers={"x-device-id": "redis-down-device"})
+            assert r2.status_code == 200
+    finally:
+        main.get_redis = original
+        settings.rate_limit_per_minute = original_limit
+
+
+def test_missing_device_id_header(mock_mapbox_token):
+    """Requests without x-device-id should return 400."""
+    response = client.post("/geocode", json={"query": "Test"}, headers={"x-device-id": ""})
+    assert response.status_code == 400
+    assert "x-device-id" in response.json()["detail"].lower()
+
+
+def test_invalid_device_id_header(mock_mapbox_token):
+    """Requests with malformed x-device-id should return 400."""
+    response = client.post("/geocode", json={"query": "Test"}, headers={"x-device-id": "short"})
+    assert response.status_code == 400
+    assert "x-device-id" in response.json()["detail"].lower()
+
+
+def test_request_body_too_large(mock_mapbox_token):
+    """POST body exceeding 64KB should return 413."""
+    big_body = {"query": "x" * 70000}
+    response = client.post("/geocode", json=big_body)
+    assert response.status_code == 413
+    assert "too large" in response.json()["detail"].lower()
+
+
+def test_request_body_invalid_content_length(mock_mapbox_token):
+    """Invalid Content-Length header should be handled gracefully (ValueError catch)."""
+    with respx.mock:
+        respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
+            return_value=Response(200, json={"features": []})
+        )
+        response = client.post(
+            "/geocode",
+            json={"query": "Test"},
+            headers={"Content-Length": "not-a-number"},
+        )
+        # Should not crash; body is small so it proceeds normally
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Monitoring & observability
+# ---------------------------------------------------------------------------
+
+
+def test_health_with_redis_connected(fake_redis):
+    """Health endpoint should report redis status when Redis is available."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["redis"] == "connected"
+
+
+def test_health_with_redis_unavailable():
+    """Health endpoint should report redis unavailable when Redis is down."""
+    original = main.get_redis
+
+    async def broken():
+        raise ConnectionError("Redis down")
+
+    main.get_redis = broken
+    try:
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["redis"] == "unavailable"
+    finally:
+        main.get_redis = original
+
+
+def test_metrics_endpoint_returns_prometheus_format():
+    """Metrics endpoint should return Prometheus text format."""
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    body = response.text
+    assert "proxy_requests_total" in body
+    assert "proxy_cache_hits_total" in body
+    assert "proxy_cache_misses_total" in body
+    assert "proxy_mapbox_latency_seconds" in body
+
+
+@respx.mock
+def test_metrics_count_cache_hit(mock_mapbox_token, fake_redis):
+    """Cache hit should increment proxy_cache_hits_total."""
+    mb = {
+        "features": [
+            {
+                "properties": {"name": "Test", "full_address": "123 St", "mapbox_id": "mbx"},
+                "geometry": {"coordinates": [-122.4, 37.7]},
+            }
+        ]
+    }
+    respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(return_value=Response(200, json=mb))
+
+    # First request — cache miss
+    r1 = client.post("/geocode", json={"query": "Test"})
+    assert r1.status_code == 200
+    assert r1.json()["cached"] is False
+
+    # Second request — cache hit
+    r2 = client.post("/geocode", json={"query": "Test"})
+    assert r2.status_code == 200
+    assert r2.json()["cached"] is True
+
+    # Metrics should reflect both hit and miss
+    metrics_response = client.get("/metrics")
+    body = metrics_response.text
+    assert 'proxy_cache_hits_total{endpoint="/geocode"}' in body
+    assert 'proxy_cache_misses_total{endpoint="/geocode"}' in body
+
+
+@respx.mock
+def test_metrics_count_mapbox_error(mock_mapbox_token, fake_redis):
+    """Mapbox error should increment proxy_mapbox_errors_total."""
+    respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(return_value=Response(500, text="Error"))
+
+    response = client.post("/geocode", json={"query": "Test"})
+    assert response.status_code == 502
+
+    metrics_response = client.get("/metrics")
+    body = metrics_response.text
+    assert 'proxy_mapbox_errors_total{endpoint="/geocode",status="500"}' in body
+
+
+def test_metrics_count_request():
+    """Every request should increment proxy_requests_total."""
+    client.get("/health")
+    metrics_response = client.get("/metrics")
+    body = metrics_response.text
+    assert 'proxy_requests_total{endpoint="/health",method="GET",status="200"}' in body
+
+
 # ---------------------------------------------------------------------------
 # Settings & configuration
 # ---------------------------------------------------------------------------
 
 
-def test_rate_limit_exceeded(mock_mapbox_token):
+def test_rate_limit_exceeded(mock_mapbox_token, fake_redis):
     """After exceeding per-minute limit, subsequent requests return 429."""
     original_limit = settings.rate_limit_per_minute
     settings.rate_limit_per_minute = 2  # set very low for test
+    device = "ratelimit-test-device1"
     try:
         with respx.mock:
             respx.get("https://api.mapbox.com/search/searchbox/v1/forward").mock(
                 return_value=Response(200, json={"features": []})
             )
             # First two requests succeed
-            r1 = client.post("/geocode", json={"query": "A"}, headers={"x-device-id": "ratelimit-test"})
+            r1 = client.post("/geocode", json={"query": "A"}, headers={"x-device-id": device})
             assert r1.status_code == 200
-            r2 = client.post("/geocode", json={"query": "B"}, headers={"x-device-id": "ratelimit-test"})
+            r2 = client.post("/geocode", json={"query": "B"}, headers={"x-device-id": device})
             assert r2.status_code == 200
 
             # Third request should be rate limited
-            r3 = client.post("/geocode", json={"query": "C"}, headers={"x-device-id": "ratelimit-test"})
+            r3 = client.post("/geocode", json={"query": "C"}, headers={"x-device-id": device})
             assert r3.status_code == 429
             assert "Rate limit" in r3.json()["detail"]
     finally:
         settings.rate_limit_per_minute = original_limit
-        # Clear rate limit store for this client
-        main._rate_limit_store.pop("ratelimit-test", None)
+        # Clear rate limit key in Redis
+        import asyncio
+
+        async def cleanup():
+            r = await main.get_redis()
+            await r.delete(f"ratelimit:{device}")
+
+        asyncio.run(cleanup())
 
 
 def test_settings_default_values():
@@ -631,7 +795,6 @@ def test_settings_default_values():
 
     s = Settings()
     assert s.mapbox_token == ""
-    assert s.google_places_api_key == ""
     assert s.redis_url == "redis://localhost:6379/0"
     assert s.rate_limit_per_minute == 60
     assert s.max_cache_seconds == 86400
@@ -646,6 +809,30 @@ def test_settings_cors_origins():
 
     s2 = Settings(cors_origins="https://app.contextual.com,https://admin.contextual.com")
     assert s2.cors_origins == "https://app.contextual.com,https://admin.contextual.com"
+
+
+def test_settings_require_redis_tls_default():
+    """REQUIRE_REDIS_TLS should default to False."""
+    from app.main import Settings
+
+    s = Settings()
+    assert s.require_redis_tls is False
+
+
+def test_settings_require_redis_tls_rejects_plaintext():
+    """When REQUIRE_REDIS_TLS=True and REDIS_URL is plaintext, validation should fail."""
+    from app.main import Settings
+
+    with pytest.raises(ValueError, match="REQUIRE_REDIS_TLS"):
+        Settings(redis_url="redis://localhost:6379/0", require_redis_tls=True)
+
+
+def test_settings_require_redis_tls_accepts_rediss():
+    """When REQUIRE_REDIS_TLS=True and REDIS_URL uses rediss://, validation should pass."""
+    from app.main import Settings
+
+    s = Settings(redis_url="rediss://prod.redis.provider:6379/0", require_redis_tls=True)
+    assert s.redis_url == "rediss://prod.redis.provider:6379/0"
 
 
 def test_cors_allows_all_origins():
@@ -670,7 +857,7 @@ def test_geocode_accepts_device_id_header(mock_mapbox_token):
         response = client.post(
             "/geocode",
             json={"query": "Test"},
-            headers={"x-device-id": "device-123"},
+            headers={"x-device-id": "device-12345678901"},
         )
         assert response.status_code == 200
 
@@ -693,7 +880,7 @@ def test_reverse_geocode_accepts_device_id_header(mock_mapbox_token):
         )
         response = client.get(
             "/reverse-geocode?lat=37.7&lng=-122.4",
-            headers={"x-device-id": "device-456"},
+            headers={"x-device-id": "device-4567890123456"},
         )
         assert response.status_code == 200
 
@@ -723,6 +910,6 @@ def test_route_accepts_device_id_header(mock_mapbox_token):
         response = client.post(
             "/route",
             json={"waypoints": [[37.7749, -122.4194], [37.7849, -122.4094]]},
-            headers={"x-device-id": "device-789"},
+            headers={"x-device-id": "device-7890123456789"},
         )
         assert response.status_code == 200

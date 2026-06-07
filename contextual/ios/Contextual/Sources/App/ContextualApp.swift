@@ -147,6 +147,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             return
         }
         // In production: call SupabaseService.shared.acceptInvite(token: token)
+        #if DEBUG
         print("Deep link token: \(token)")
+        #endif
     }
 }
