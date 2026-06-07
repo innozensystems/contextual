@@ -46,13 +46,8 @@
         </activity>
 
         <activity
-            android:name=".app.OnboardingActivity"
+            android:name=".ui.OnboardingActivity"
             android:exported="false" />
-
-        <service
-            android:name=".service.GeofenceJobService"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="true" />
 
         <receiver
             android:name=".service.GeofenceBroadcastReceiver"

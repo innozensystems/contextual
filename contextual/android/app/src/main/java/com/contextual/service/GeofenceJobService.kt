@@ -1,5 +1,6 @@
 package com.contextual.service
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,7 @@ import com.contextual.data.Task
 import kotlinx.coroutines.tasks.await
 
 object GeofenceManager {
+    @SuppressLint("MissingPermission")
     suspend fun updateGeofences(
         context: Context,
         tasks: List<Task>,
