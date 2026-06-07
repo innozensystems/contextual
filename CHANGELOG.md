@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.0.1] - 2026-06-07
+
+### Added
+- Project README with architecture overview, layout, and security checklist
+
 ## [1.0.0.0] - 2026-06-06
 
 ### Added
