@@ -21,10 +21,13 @@ object GeofenceManager {
         geofencingClient.removeGeofences(getPendingIntent(context))
 
         // Add new
-        val geofences = activeTasks.map { task ->
+        val geofences = activeTasks.mapNotNull { task ->
+            val lat = task.locations?.latitude
+            val lng = task.locations?.longitude
+            if (lat == null || lng == null) return@mapNotNull null
             Geofence.Builder()
                 .setRequestId("task-${task.id}")
-                .setCircularRegion(37.7749, -122.4194, task.reminderRadiusMeters.toFloat())
+                .setCircularRegion(lat, lng, task.reminderRadiusMeters.toFloat())
                 .setExpirationDuration(Geofence.NEVER_EXPIRE)
                 .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
                 .build()

@@ -34,7 +34,8 @@ data class Task(
     @SerialName("is_hard_to_get") val isHardToGet: Boolean = false,
     @SerialName("list_id") val listId: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    val locations: Location? = null
 )
 
 @Serializable
