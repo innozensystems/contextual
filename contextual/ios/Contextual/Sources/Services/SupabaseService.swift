@@ -13,7 +13,10 @@ final class SupabaseService: ObservableObject {
 
     private init() {
         // Replace with your Supabase project URL and anon key
-        let supabaseURL = URL(string: Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String ?? "https://your-project.supabase.co")!
+        let urlString = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String ?? "https://your-project.supabase.co"
+        guard let supabaseURL = URL(string: urlString) else {
+            fatalError("Invalid SUPABASE_URL in Info.plist: \(urlString)")
+        }
         let supabaseKey = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String ?? "your-anon-key"
 
         self.client = SupabaseClient(
