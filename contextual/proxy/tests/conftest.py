@@ -4,7 +4,6 @@ Prevents shadowing by other `app` packages on PYTHONPATH.
 Hides .env so Settings() loads with empty defaults for tests.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -20,8 +19,9 @@ if _env_path.exists():
 # to contextual/proxy/app/ and not some other app package elsewhere.
 sys.path.insert(0, str(_proxy_root))
 
-import pytest
-from app.main import settings
+import pytest  # noqa: E402
+
+from app.main import settings  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

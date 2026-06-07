@@ -4,9 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app, settings
 
-client = TestClient(
-    app, headers={"x-device-id": "test-device-12345", "x-api-key": "test-api-key"}
-)
+client = TestClient(app, headers={"x-device-id": "test-device-12345", "x-api-key": "test-api-key"})
 
 
 def test_health():
@@ -52,9 +50,7 @@ def test_api_key_rejected_when_configured():
         assert response.status_code == 401
 
         # Invalid key
-        client_bad_key = TestClient(
-            app, headers={"x-device-id": "test-device-12345", "x-api-key": "wrong-key"}
-        )
+        client_bad_key = TestClient(app, headers={"x-device-id": "test-device-12345", "x-api-key": "wrong-key"})
         response = client_bad_key.post("/geocode", json={"query": "Whole Foods"})
         assert response.status_code == 401
     finally:

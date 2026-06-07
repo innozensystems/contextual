@@ -13,9 +13,7 @@ from httpx import Response
 from app import main
 from app.main import app, settings
 
-client = TestClient(
-    app, headers={"x-device-id": "test-device-12345", "x-api-key": "test-api-key"}
-)
+client = TestClient(app, headers={"x-device-id": "test-device-12345", "x-api-key": "test-api-key"})
 
 
 # ---------------------------------------------------------------------------
