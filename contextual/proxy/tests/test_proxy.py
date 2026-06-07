@@ -2,7 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app, Settings
+from app.main import app, Settings, settings
 
 client = TestClient(app)
 
@@ -37,5 +37,8 @@ def test_route_missing_token():
 
 
 def test_route_insufficient_waypoints():
+    original_token = settings.mapbox_token
+    settings.mapbox_token = "dummy-token"
     response = client.post("/route", json={"waypoints": [[37.7749, -122.4194]]})
+    settings.mapbox_token = original_token
     assert response.status_code == 400
