@@ -25,7 +25,6 @@ jobs:
         run: |
           cd contextual/proxy
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
 
       - name: Run tests
         run: |
