@@ -1,131 +1,88 @@
-# Contextual — Context-Aware Reminder App
+# Contextual
 
-A greenfield native mobile app that uses GPS to surface tasks when users are near relevant locations. Built with native Swift (iOS) + Kotlin (Android), Supabase for backend, and a thin Python proxy for Mapbox.
+A context-aware reminder app that knows where you are and what you're doing, so it reminds you at the right place and time.
 
 ## Architecture
 
+| Layer | Tech |
+|-------|------|
+| **iOS App** | SwiftUI |
+| **Android App** | Kotlin |
+| **API Proxy** | FastAPI (Python) |
+| **Backend / DB** | Supabase (PostgreSQL) |
+| **Cache** | Redis |
+| **Geocoding / Routing** | Mapbox |
+
+## Repository Layout
+
 ```
-┌─ Native iOS (Swift) / Android (Kotlin)
-├─ Supabase SDK (auth + sync + local DB + realtime)
-├─ Platform APIs (geofencing, speech, notifications)
-└─ Thin Python Proxy (FastAPI: Mapbox proxy + cache only)
+.
+├── ios/          # SwiftUI iOS application
+├── android/      # Kotlin Android application
+├── proxy/        # FastAPI thin proxy
+│   ├── app/      # Application code
+│   └── tests/    # Test suite
+└── .github/
+    └── workflows/
+        ├── ios.yml       # iOS CI
+        ├── android.yml   # Android CI
+        └── proxy.yml     # Proxy CI (lint, test, Docker smoke)
 ```
 
-## Quick Start
+## Proxy (FastAPI)
 
-### 1. Supabase Setup
+The proxy sits between the mobile clients and Supabase, adding:
 
-```bash
-cd supabase/migrations
-# Run 001_initial_schema.sql in your Supabase SQL Editor
-# Enable PostGIS extension first
-```
+- **Redis-backed rate limiting** — sliding-window per IP with atomic Lua scripts
+- **Request/response caching** — configurable TTL per endpoint
+- **Mapbox integration** — geocoding and routing for location-aware reminders
+- **Prometheus metrics** — cardinality-safe instrumentation (no unbounded labels)
+- **Certificate pinning** — SPKI hash verification on both iOS and Android
+- **CORS** — origin allowlist with wildcard safety (credentials disabled when `*` present)
 
-### 2. Proxy Setup
+### Running Locally
 
 ```bash
 cd proxy
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export MAPBOX_TOKEN=your_mapbox_token
 uvicorn app.main:app --reload
 ```
 
-### 3. iOS Setup
+### Testing
 
 ```bash
-cd ios/Contextual
-# Open Package.swift in Xcode or use xcodegen
-# Update Info.plist with your Supabase URL and anon key
-# Build and run on device (simulator lacks geofencing)
+cd proxy
+pytest -q --cov=app --cov-report=term-missing
 ```
 
-### 4. Android Setup
+Current coverage: **~98%** (89 tests).
+
+### Docker
 
 ```bash
-cd android
-./gradlew assembleDebug
-# Update app/build.gradle.kts BuildConfig fields with your keys
-# Run on device (emulator supports geofencing with mock locations)
+cd proxy
+docker build -t contextual-proxy .
+docker run -p 8000:8000 --env-file .env contextual-proxy
 ```
 
-## Key Features Implemented
+## CI / CD
 
-- **Dynamic geofence swapping** — Monitors nearest 20 locations on iOS, swaps as user moves
-- **Smart notification batching** — One expandable notification per location
-- **Voice-first task entry** — iOS Speech framework + Android SpeechRecognizer
-- **Instant complete + 10s undo** — Frictionless lock-screen completion with safety net
-- **Trip threading** — Auto-suggest inline banner for nearby task clusters
-- **Offline-first** — Supabase client SDK with local SQLite replica
-- **Partner invites** — Deep link invitations via SMS/email
-- **Rule-based habits** — SQL queries on Supabase (v1, ML deferred)
+| Workflow | Trigger | Jobs |
+|----------|---------|------|
+| `proxy.yml` | `proxy/**` changes | ruff lint/format, pytest, Docker smoke, Trivy scan |
+| `ios.yml` | `ios/**` changes | build, test, archive |
+| `android.yml` | `android/**` changes | build, test, APK artifact |
 
-## Project Structure
+## Security Checklist
 
-```
-contextual/
-├── ios/                    # Swift + SwiftUI iOS app
-│   ├── Contextual/
-│   │   ├── Sources/
-│   │   │   ├── App/        # App entry, auth
-│   │   │   ├── Models/     # Task, Location, List
-│   │   │   ├── Services/   # Supabase, Geofence, Notification, Proxy
-│   │   │   ├── Views/      # Home, AddTask, TaskDetail, Trip, Onboarding, Settings
-│   │   │   └── ViewModels/  # (inline in Views for v1)
-│   │   └── Resources/
-│   └── fastlane/
-├── android/                # Kotlin + Jetpack Android app
-│   ├── app/src/main/
-│   │   ├── java/com/contextual/
-│   │   │   ├── app/        # MainActivity, Application
-│   │   │   ├── data/       # Models, SupabaseClient
-│   │   │   ├── ui/         # Fragments, ViewModels, Adapters
-│   │   │   └── service/    # Geofence, Notification, Proxy
-│   │   └── res/            # Layouts, values, navigation
-│   └── fastlane/
-├── proxy/                  # FastAPI thin proxy
-│   ├── app/main.py         # Geocode, reverse-geocode, route
-│   ├── Dockerfile
-│   └── requirements.txt
-├── supabase/migrations/    # Database schema + RLS policies
-│   └── 001_initial_schema.sql
-├── .github/workflows/     # CI/CD for iOS, Android, Proxy
-└── docs/                  # (empty — add API docs here)
-```
-
-## Environment Variables
-
-### Proxy
-- `MAPBOX_TOKEN` — Mapbox public token (server-side only)
-- `REDIS_URL` — Redis connection string (default: `redis://localhost:6379/0`)
-- `RATE_LIMIT_PER_MINUTE` — Default: 60
-
-### Mobile
-- `SUPABASE_URL` — Your Supabase project URL
-- `SUPABASE_ANON_KEY` — Supabase anon/public key
-- `PROXY_BASE_URL` — Thin proxy URL (e.g., `https://proxy.yourdomain.com`)
-
-## CI/CD
-
-GitHub Actions + Fastlane:
-- **iOS:** Build, test, and deploy to TestFlight on every `main` push
-- **Android:** Build, test, and deploy to Play Store Internal Testing
-- **Proxy:** Build Docker image and push to registry
-
-Configure secrets:
-- `APP_STORE_CONNECT_API_KEY_*` — For iOS TestFlight
-- `PLAY_STORE_JSON_KEY` — For Play Store upload
-- `MATCH_PASSWORD` — For iOS code signing
-
-## Design System
-
-See `~/.gstack/projects/contextual_done/DESIGN.md` for:
-- Typography tokens (SF Pro / Roboto)
-- Color system (one accent only, no gradients)
-- Spacing scale (8pt grid)
-- Component specs (task row, context header, FAB, modal)
-- Accessibility baseline (44pt touch targets, Dynamic Type, Reduce Motion)
+- [x] Rate limiting with Redis atomic Lua scripts (with fakeredis fallback for tests)
+- [x] CORS wildcard bypass fixed — `*` in comma-separated list forces `allow_credentials=False`
+- [x] Prometheus label cardinality safe — `endpoint` label instead of `device_id`
+- [x] Certificate pinning via SPKI hash on iOS and Android
+- [x] Sensitive parameter redaction in logs (`token`, `key`, `password`, `secret`)
+- [x] CI path filters fixed to match repo root layout (`proxy/**`, not `contextual/proxy/**`)
+- [x] Trivy action pinned to `@0.28.0` (not floating `@master`)
 
 ## License
 
