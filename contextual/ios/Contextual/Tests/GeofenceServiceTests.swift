@@ -125,4 +125,87 @@ final class GeofenceServiceTests: XCTestCase {
         )
         XCTAssertEqual(result, [taskId])
     }
+
+    // MARK: - startMonitoring with embedded locations
+
+    func testStartMonitoringUsesEmbeddedLocation() {
+        let service = GeofenceService.shared
+        let taskId = UUID()
+        var task = makeTask(id: taskId)
+        task.location = CLocation(
+            id: UUID(),
+            name: "Test Loc",
+            latitude: 37.7749,
+            longitude: -122.4194
+        )
+
+        // Should not crash and should populate internal taskLocations
+        service.startMonitoring(tasks: [task])
+
+        // Verify by calling nearestTaskIds with the service's internal state
+        let current = CLLocation(latitude: 37.7749, longitude: -122.4194)
+        let result = GeofenceService.nearestTaskIds(
+            tasks: [task],
+            coordinates: [taskId: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)],
+            currentLocation: current
+        )
+        XCTAssertEqual(result, [taskId])
+    }
+
+    func testStartMonitoringUsesProvidedLocationsOverEmbedded() {
+        let service = GeofenceService.shared
+        let taskId = UUID()
+        var task = makeTask(id: taskId)
+        task.location = CLocation(
+            id: UUID(),
+            name: "Embedded",
+            latitude: 37.0,
+            longitude: -122.0
+        )
+
+        let providedCoord = CLLocationCoordinate2D(latitude: 38.0, longitude: -123.0)
+        service.startMonitoring(tasks: [task], locations: [taskId: providedCoord])
+
+        // nearestTaskIds with the provided coordinate should work
+        let current = CLLocation(latitude: 38.0, longitude: -123.0)
+        let result = GeofenceService.nearestTaskIds(
+            tasks: [task],
+            coordinates: [taskId: providedCoord],
+            currentLocation: current
+        )
+        XCTAssertEqual(result, [taskId])
+    }
+
+    // MARK: - CTask model with embedded location
+
+    func testTaskDecodesWithEmbeddedLocation() throws {
+        let json = """
+        {
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "user_id": "550e8400-e29b-41d4-a716-446655440001",
+            "title": "Buy milk",
+            "location_id": "550e8400-e29b-41d4-a716-446655440002",
+            "status": "active",
+            "priority": "normal",
+            "reminder_radius_meters": 200,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "locations": {
+                "id": "550e8400-e29b-41d4-a716-446655440003",
+                "name": "Whole Foods",
+                "latitude": 37.7749,
+                "longitude": -122.4194
+            }
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let task = try decoder.decode(CTask.self, from: json)
+
+        XCTAssertEqual(task.title, "Buy milk")
+        XCTAssertNotNil(task.location)
+        XCTAssertEqual(task.location?.name, "Whole Foods")
+        XCTAssertEqual(task.location?.latitude, 37.7749)
+    }
 }

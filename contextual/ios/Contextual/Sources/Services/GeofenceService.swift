@@ -34,19 +34,20 @@ final class GeofenceService: NSObject, ObservableObject {
         locationManager.requestAlwaysAuthorization()
     }
 
-    func startMonitoring(tasks: [CTask]) {
+    func startMonitoring(tasks: [CTask], locations: [UUID: CLLocationCoordinate2D]? = nil) {
         allTasks = tasks.filter { $0.status == .active && $0.locationId != nil }
-        rebuildTaskLocations()
+        rebuildTaskLocations(from: locations)
         refreshGeofences()
     }
 
-    private func rebuildTaskLocations() {
+    private func rebuildTaskLocations(from provided: [UUID: CLLocationCoordinate2D]? = nil) {
         taskLocations.removeAll()
-        // In production, fetch actual location coordinates from Supabase or local cache.
-        // Here we store the lat/lng as part of the task model for simplicity.
         for task in allTasks {
-            // Placeholder: lat/lng would come from CLocation object.
-            // Using stored property on task for demo; in production fetch from DB.
+            if let coord = provided?[task.id] {
+                taskLocations[task.id] = coord
+            } else if let loc = task.location {
+                taskLocations[task.id] = CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude)
+            }
         }
     }
 

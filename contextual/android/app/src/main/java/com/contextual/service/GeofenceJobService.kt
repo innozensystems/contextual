@@ -10,9 +10,14 @@ import com.contextual.data.Task
 import kotlinx.coroutines.tasks.await
 
 object GeofenceManager {
-    suspend fun updateGeofences(context: Context, tasks: List<Task>) {
+    suspend fun updateGeofences(
+        context: Context,
+        tasks: List<Task>,
+        currentLat: Double? = null,
+        currentLng: Double? = null
+    ) {
         val geofencingClient = LocationServices.getGeofencingClient(context)
-        val specs = GeofencePlanner.buildSpecs(tasks)
+        val specs = GeofencePlanner.buildSpecs(tasks, currentLat, currentLng)
 
         // Remove all existing
         geofencingClient.removeGeofences(getPendingIntent(context))

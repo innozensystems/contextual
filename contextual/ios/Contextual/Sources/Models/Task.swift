@@ -29,6 +29,7 @@ struct CTask: Identifiable, Codable, Equatable {
     var listId: UUID?
     let createdAt: Date
     var updatedAt: Date
+    var location: CLocation? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -45,6 +46,7 @@ struct CTask: Identifiable, Codable, Equatable {
         case listId = "list_id"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case location = "locations"
     }
 }
 
