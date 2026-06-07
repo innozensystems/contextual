@@ -11,7 +11,10 @@ actor ProxyService {
 
     private init() {
         let proxyURL = Bundle.main.object(forInfoDictionaryKey: "PROXY_BASE_URL") as? String ?? "http://localhost:8000"
-        self.baseURL = URL(string: proxyURL)!
+        guard let url = URL(string: proxyURL) else {
+            fatalError("Invalid PROXY_BASE_URL in Info.plist: \(proxyURL)")
+        }
+        self.baseURL = url
         self.session = URLSession(configuration: .default)
     }
 
@@ -78,13 +81,18 @@ actor ProxyService {
     // MARK: - Reverse Geocode
 
     func reverseGeocode(lat: Double, lng: Double) async throws -> GeocodeResult {
-        var components = URLComponents(url: baseURL.appendingPathComponent("reverse-geocode"), resolvingAgainstBaseURL: true)!
+        guard var components = URLComponents(url: baseURL.appendingPathComponent("reverse-geocode"), resolvingAgainstBaseURL: true) else {
+            throw ProxyError.invalidResponse
+        }
         components.queryItems = [
             URLQueryItem(name: "lat", value: String(lat)),
             URLQueryItem(name: "lng", value: String(lng))
         ]
+        guard let url = components.url else {
+            throw ProxyError.invalidResponse
+        }
 
-        let (data, response) = try await session.data(from: components.url!)
+        let (data, response) = try await session.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw ProxyError.requestFailed
         }
