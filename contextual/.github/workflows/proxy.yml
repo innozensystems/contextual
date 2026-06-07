@@ -31,8 +31,45 @@ jobs:
           cd contextual/proxy
           pytest tests/ -v --cov=app --cov-branch --cov-fail-under=95
 
-  deploy:
+  docker-build:
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          cd contextual/proxy
+          docker build -t contextual-proxy:ci .
+
+      - name: Smoke test container
+        run: |
+          docker run -d --name proxy-smoke -p 18000:8000 \
+            -e MAPBOX_TOKEN=dummy-token-for-test \
+            -e REDIS_URL=redis://localhost:6379/0 \
+            contextual-proxy:ci
+
+          # Wait up to 15 seconds for /health
+          for i in $(seq 30); do
+            if curl -sf http://localhost:18000/health | grep -q '"status":"ok"'; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 0.5
+          done
+
+          echo "Health check failed — container logs:"
+          docker logs proxy-smoke
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f proxy-smoke || true
+          docker rmi contextual-proxy:ci || true
+
+  deploy:
+    needs: [test, docker-build]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,11 @@
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.git/
+.github/
+*.md
+Dockerfile
+.dockerignore
+requirements-test.txt
