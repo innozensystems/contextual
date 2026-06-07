@@ -26,10 +26,10 @@ jobs:
           cd contextual/proxy
           pip install -r requirements-test.txt
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
           cd contextual/proxy
-          pytest tests/ -v
+          pytest tests/ -v --cov=app --cov-branch --cov-fail-under=95
 
   deploy:
     needs: test
