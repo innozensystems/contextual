@@ -471,10 +471,10 @@ async def route(
         "overview": "full",
     }
     if req.optimize:
-        params["waypoints"] = "0;" + ";".join(str(i) for i in range(len(req.waypoints)))
         # Mapbox optimize=true uses the optimized-trip API, not directions
         url = "https://api.mapbox.com/optimized-trips/v1/" + req.profile + "/" + coords_str
     else:
+        params["waypoints"] = "0;" + ";".join(str(i) for i in range(len(req.waypoints)))
         url = "https://api.mapbox.com/directions/v5/" + req.profile + "/" + coords_str
 
     cache_key = _cache_key(

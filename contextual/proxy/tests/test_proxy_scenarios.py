@@ -25,9 +25,12 @@ client = TestClient(app, headers={"x-device-id": "test-device-12345"})
 def reset_redis_between_tests():
     """Ensure each test starts with a fresh Redis state."""
     original = main._redis_client
+    original_url = settings.redis_url
     main._redis_client = None
+    settings.redis_url = "redis://localhost:9999/0"  # force connection failure
     yield
     main._redis_client = original
+    settings.redis_url = original_url
 
 
 @pytest.fixture
