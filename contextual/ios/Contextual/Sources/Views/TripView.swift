@@ -5,6 +5,7 @@ struct TripView: View {
     let tasks: [CTask]
     @State private var route: ProxyService.RouteResponse?
     @State private var isOptimizing = false
+    @State private var errorMessage: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -29,6 +30,19 @@ struct TripView: View {
                     if isOptimizing {
                         ProgressView("Optimizing route...")
                             .padding()
+                    } else if let error = errorMessage {
+                        VStack(spacing: 8) {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button("Try again") {
+                                self.errorMessage = nil
+                                optimizeRoute()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding()
                     } else if let route = route {
                         HStack {
                             Label(formatDuration(route.durationSeconds), systemImage: "clock")
@@ -85,8 +99,10 @@ struct TripView: View {
                 }
                 let result = try await ProxyService.shared.route(waypoints: waypoints, optimize: true)
                 self.route = result
+            } catch let proxyError as ProxyService.ProxyError {
+                self.errorMessage = proxyError.userMessage
             } catch {
-                // Show error
+                self.errorMessage = "Something went wrong. Please try again."
             }
             isOptimizing = false
         }

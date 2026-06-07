@@ -53,6 +53,7 @@ class TripFragment : Fragment() {
             try {
                 binding.optimizeButton.isEnabled = false
                 binding.optimizeButton.text = "Optimizing..."
+                binding.errorText.visibility = View.GONE
 
                 // In production: use actual task coordinates
                 val waypoints = listOf(
@@ -75,8 +76,14 @@ class TripFragment : Fragment() {
                         )
                     }
                 }
+            } catch (e: ProxyService.ProxyException) {
+                binding.errorText.text = e.message
+                binding.errorText.visibility = View.VISIBLE
+                binding.optimizeButton.text = "Try again"
             } catch (e: Exception) {
-                binding.optimizeButton.text = "Failed — try again"
+                binding.errorText.text = "Something went wrong. Please try again."
+                binding.errorText.visibility = View.VISIBLE
+                binding.optimizeButton.text = "Try again"
             } finally {
                 binding.optimizeButton.isEnabled = true
                 if (binding.optimizeButton.text == "Optimizing...") {

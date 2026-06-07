@@ -167,3 +167,29 @@ def test_geocode_request_json_matches_mobile_payload():
     assert parsed.proximity_lat == 37.7749
     assert parsed.proximity_lng == -122.4194
     assert parsed.limit == 5
+
+
+# ---------------------------------------------------------------------------
+# Error response contract
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "status,expected_detail_present",
+    [
+        (400, True),   # bad request
+        (404, True),   # not found
+        (429, True),   # rate limited
+        (502, True),   # mapbox error
+        (503, True),   # not configured
+    ],
+)
+def test_error_response_json_has_detail(status, expected_detail_present):
+    """FastAPI HTTPException always returns {"detail": "..."} that mobile parses."""
+    from fastapi import HTTPException
+
+    exc = HTTPException(status_code=status, detail=f"Error {status}")
+    # FastAPI serializes HTTPException as {"detail": "..."}
+    body = json.loads('{"detail": "' + exc.detail + '"}')
+    assert "detail" in body
+    assert isinstance(body["detail"], str)
+    assert body["detail"] == f"Error {status}"

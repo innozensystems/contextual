@@ -49,12 +49,57 @@ object ProxyService {
         val cached: Boolean
     )
 
-    suspend fun geocode(query: String): List<GeocodeResult> {
+    @Serializable
+    private data class ErrorBody(val detail: String? = null)
+
+    sealed class ProxyException(message: String) : Exception(message) {
+        class RateLimited(detail: String?) : ProxyException(detail ?: "Too many requests. Please try again later.")
+        class MapboxUnavailable(detail: String?) : ProxyException(detail ?: "Routing service is unavailable. Please try again later.")
+        class NotConfigured(detail: String?) : ProxyException(detail ?: "Service is not configured. Contact support.")
+        class NotFound(detail: String?) : ProxyException(detail ?: "No results found.")
+        class BadRequest(detail: String?) : ProxyException(detail ?: "Invalid request.")
+        class HttpError(val status: Int, detail: String?) : ProxyException(detail ?: "Server error $status.")
+    }
+
+    private suspend inline fun <reified T> safeRequest(block: () -> T): T {
+        return try {
+            block()
+        } catch (e: io.ktor.client.plugins.ClientRequestException) {
+            val detail = parseError(e.response)
+            when (e.response.status.value) {
+                429 -> throw ProxyException.RateLimited(detail)
+                404 -> throw ProxyException.NotFound(detail)
+                400, 422 -> throw ProxyException.BadRequest(detail)
+                else -> throw ProxyException.HttpError(e.response.status.value, detail)
+            }
+        } catch (e: io.ktor.client.plugins.ServerResponseException) {
+            val detail = parseError(e.response)
+            when (e.response.status.value) {
+                502 -> throw ProxyException.MapboxUnavailable(detail)
+                503 -> throw ProxyException.NotConfigured(detail)
+                else -> throw ProxyException.HttpError(e.response.status.value, detail)
+            }
+        } catch (e: io.ktor.client.network.sockets.SocketTimeoutException) {
+            throw ProxyException.MapboxUnavailable("Connection timed out")
+        } catch (e: io.ktor.client.network.sockets.ConnectTimeoutException) {
+            throw ProxyException.MapboxUnavailable("Connection timed out")
+        }
+    }
+
+    private suspend fun parseError(response: io.ktor.client.statement.HttpResponse): String? {
+        return try {
+            response.body<ErrorBody>().detail
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun geocode(query: String): List<GeocodeResult> = safeRequest {
         val response = client.post("$baseUrl/geocode") {
             contentType(ContentType.Application.Json)
             setBody(GeocodeRequest(query = query))
         }
-        return response.body<GeocodeResponse>().results
+        response.body<GeocodeResponse>().results
     }
 
     @Serializable
@@ -72,11 +117,11 @@ object ProxyService {
         val geometry: String? = null
     )
 
-    suspend fun route(waypoints: List<Pair<Double, Double>>): RouteResponse {
+    suspend fun route(waypoints: List<Pair<Double, Double>>): RouteResponse = safeRequest {
         val response = client.post("$baseUrl/route") {
             contentType(ContentType.Application.Json)
             setBody(RouteRequest(waypoints = waypoints.map { listOf(it.first, it.second) }))
         }
-        return response.body()
+        response.body()
     }
 }

@@ -56,6 +56,37 @@ actor ProxyService {
         let cached: Bool
     }
 
+    // MARK: - Response validation
+
+    private struct ErrorBody: Codable {
+        let detail: String?
+    }
+
+    private func checkResponse(_ response: URLResponse, data: Data, accepted: ClosedRange<Int> = 200...299) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw ProxyError.invalidResponse
+        }
+        guard accepted.contains(http.statusCode) else {
+            let body = try? JSONDecoder().decode(ErrorBody.self, from: data)
+            switch http.statusCode {
+            case 429:
+                throw ProxyError.rateLimited(body?.detail)
+            case 502:
+                throw ProxyError.mapboxUnavailable(body?.detail)
+            case 503:
+                throw ProxyError.notConfigured(body?.detail)
+            case 404:
+                throw ProxyError.notFound(body?.detail)
+            case 400, 422:
+                throw ProxyError.badRequest(body?.detail)
+            default:
+                throw ProxyError.httpError(status: http.statusCode, detail: body?.detail)
+            }
+        }
+    }
+
+    // MARK: - Geocode
+
     func geocode(query: String, proximity: CLLocationCoordinate2D? = nil, limit: Int = 5) async throws -> [GeocodeResult] {
         let request = GeocodeRequest(
             query: query,
@@ -70,9 +101,7 @@ actor ProxyService {
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await session.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw ProxyError.requestFailed
-        }
+        try checkResponse(response, data: data)
 
         let decoded = try JSONDecoder().decode(GeocodeResponse.self, from: data)
         return decoded.results
@@ -93,9 +122,7 @@ actor ProxyService {
         }
 
         let (data, response) = try await session.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw ProxyError.requestFailed
-        }
+        try checkResponse(response, data: data)
 
         struct ReverseResponse: Codable {
             let result: GeocodeResult
@@ -149,15 +176,37 @@ actor ProxyService {
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await session.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw ProxyError.requestFailed
-        }
+        try checkResponse(response, data: data)
 
         return try JSONDecoder().decode(RouteResponse.self, from: data)
     }
 
-    enum ProxyError: Error {
-        case requestFailed
+    enum ProxyError: Error, Equatable {
         case invalidResponse
+        case rateLimited(String?)
+        case mapboxUnavailable(String?)
+        case notConfigured(String?)
+        case notFound(String?)
+        case badRequest(String?)
+        case httpError(status: Int, detail: String?)
+
+        var userMessage: String {
+            switch self {
+            case .invalidResponse:
+                return "Invalid server response."
+            case .rateLimited(let detail):
+                return detail ?? "Too many requests. Please try again later."
+            case .mapboxUnavailable(let detail):
+                return detail ?? "Routing service is unavailable. Please try again later."
+            case .notConfigured(let detail):
+                return detail ?? "Service is not configured. Contact support."
+            case .notFound(let detail):
+                return detail ?? "No results found."
+            case .badRequest(let detail):
+                return detail ?? "Invalid request."
+            case .httpError(let status, let detail):
+                return detail ?? "Server error \(status)."
+            }
+        }
     }
 }

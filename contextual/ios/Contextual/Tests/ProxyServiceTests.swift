@@ -122,4 +122,34 @@ final class ProxyServiceTests: XCTestCase {
         let response = try JSONDecoder().decode(ProxyService.RouteResponse.self, from: json)
         XCTAssertNil(response.geometry)
     }
+
+    // MARK: - Error handling
+
+    func testProxyErrorUserMessages() {
+        XCTAssertEqual(ProxyService.ProxyError.rateLimited(nil).userMessage, "Too many requests. Please try again later.")
+        XCTAssertEqual(ProxyService.ProxyError.mapboxUnavailable(nil).userMessage, "Routing service is unavailable. Please try again later.")
+        XCTAssertEqual(ProxyService.ProxyError.notConfigured(nil).userMessage, "Service is not configured. Contact support.")
+        XCTAssertEqual(ProxyService.ProxyError.notFound(nil).userMessage, "No results found.")
+        XCTAssertEqual(ProxyService.ProxyError.badRequest(nil).userMessage, "Invalid request.")
+        XCTAssertEqual(ProxyService.ProxyError.httpError(status: 500, detail: nil).userMessage, "Server error 500.")
+    }
+
+    func testProxyErrorUsesDetailWhenProvided() {
+        XCTAssertEqual(
+            ProxyService.ProxyError.rateLimited("Slow down").userMessage,
+            "Slow down"
+        )
+        XCTAssertEqual(
+            ProxyService.ProxyError.mapboxUnavailable("Mapbox timeout").userMessage,
+            "Mapbox timeout"
+        )
+    }
+
+    func testErrorBodyDecodesDetail() throws {
+        let json = """
+        {"detail": "Rate limit exceeded"}
+        """.data(using: .utf8)!
+        let body = try JSONDecoder().decode(ProxyService.ErrorBody.self, from: json)
+        XCTAssertEqual(body.detail, "Rate limit exceeded")
+    }
 }

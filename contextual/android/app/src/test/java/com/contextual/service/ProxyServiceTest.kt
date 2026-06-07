@@ -112,4 +112,20 @@ class ProxyServiceTest {
         assertTrue(encoded.contains("\"waypoints\":[[37.7749,-122.4194],[37.7849,-122.4094]]"))
         assertTrue(encoded.contains("\"optimize\":true"))
     }
+
+    @Test
+    fun `proxy exception messages are user friendly`() {
+        assertEquals("Too many requests. Please try again later.", ProxyService.ProxyException.RateLimited(null).message)
+        assertEquals("Routing service is unavailable. Please try again later.", ProxyService.ProxyException.MapboxUnavailable(null).message)
+        assertEquals("Service is not configured. Contact support.", ProxyService.ProxyException.NotConfigured(null).message)
+        assertEquals("No results found.", ProxyService.ProxyException.NotFound(null).message)
+        assertEquals("Invalid request.", ProxyService.ProxyException.BadRequest(null).message)
+        assertEquals("Server error 500.", ProxyService.ProxyException.HttpError(500, null).message)
+    }
+
+    @Test
+    fun `proxy exception uses detail when provided`() {
+        assertEquals("Slow down", ProxyService.ProxyException.RateLimited("Slow down").message)
+        assertEquals("Mapbox timeout", ProxyService.ProxyException.MapboxUnavailable("Mapbox timeout").message)
+    }
 }
