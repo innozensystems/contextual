@@ -11,16 +11,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class HomeViewModel : ViewModel() {
-    private val _tasks = MutableStateFlow<List<Task>>(emptyList())
+    internal val _tasks = MutableStateFlow<List<Task>>(emptyList())
     val tasks: StateFlow<List<Task>> = _tasks.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
+    internal val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _errorMessage = MutableStateFlow<String?>(null)
+    internal val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    private val _showTripBanner = MutableStateFlow(false)
+    internal val _showTripBanner = MutableStateFlow(false)
     val showTripBanner: StateFlow<Boolean> = _showTripBanner.asStateFlow()
 
     fun loadTasks() {

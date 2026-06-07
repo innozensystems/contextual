@@ -38,6 +38,14 @@
                 android:textAppearance="?attr/textAppearanceBody2"
                 android:text="Distance: --" />
 
+            <TextView
+                android:id="@+id/error_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@android:color/holo_red_dark"
+                android:visibility="gone"
+                android:text="" />
+
             <Button
                 android:id="@+id/optimize_button"
                 style="@style/Widget.Material3.Button"

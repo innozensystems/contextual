@@ -54,9 +54,8 @@ class HomeViewModelTest {
             makeTask("3", TaskStatus.ACTIVE)
         )
 
-        viewModel.tasks.value = tasks
-        // Banner is set in loadTasks flow; simulate manually
-        viewModel.showTripBanner.value = tasks.filter { it.status == TaskStatus.ACTIVE }.size >= 3
+        viewModel._tasks.value = tasks
+        viewModel._showTripBanner.value = tasks.filter { it.status == TaskStatus.ACTIVE }.size >= 3
 
         assertTrue(viewModel.showTripBanner.value)
     }
@@ -70,7 +69,8 @@ class HomeViewModelTest {
             makeTask("3", TaskStatus.COMPLETED)
         )
 
-        viewModel.showTripBanner.value = tasks.filter { it.status == TaskStatus.ACTIVE }.size >= 3
+        viewModel._tasks.value = tasks
+        viewModel._showTripBanner.value = tasks.filter { it.status == TaskStatus.ACTIVE }.size >= 3
         assertFalse(viewModel.showTripBanner.value)
     }
 
@@ -78,13 +78,12 @@ class HomeViewModelTest {
     fun `completeTask updates local task status`() = runTest {
         val viewModel = HomeViewModel()
         val task = makeTask("1", TaskStatus.ACTIVE)
-        viewModel.tasks.value = listOf(task)
+        viewModel._tasks.value = listOf(task)
 
-        // Simulate local completion (without Supabase call)
-        val updated = viewModel.tasks.value.map {
+        val updated = viewModel._tasks.value.map {
             if (it.id == task.id) it.copy(status = TaskStatus.COMPLETED) else it
         }
-        viewModel.tasks.value = updated
+        viewModel._tasks.value = updated
 
         assertEquals(TaskStatus.COMPLETED, viewModel.tasks.value[0].status)
     }
@@ -93,10 +92,10 @@ class HomeViewModelTest {
     fun `deleteTask removes from local state`() = runTest {
         val viewModel = HomeViewModel()
         val task = makeTask("1", TaskStatus.ACTIVE)
-        viewModel.tasks.value = listOf(task)
+        viewModel._tasks.value = listOf(task)
 
-        val remaining = viewModel.tasks.value.filter { it.id != task.id }
-        viewModel.tasks.value = remaining
+        val remaining = viewModel._tasks.value.filter { it.id != task.id }
+        viewModel._tasks.value = remaining
 
         assertTrue(viewModel.tasks.value.isEmpty())
     }
@@ -105,20 +104,18 @@ class HomeViewModelTest {
     fun `active task count changes affect trip banner`() = runTest {
         val viewModel = HomeViewModel()
 
-        // 3 active → banner shown
-        viewModel.tasks.value = listOf(
+        viewModel._tasks.value = listOf(
             makeTask("1", TaskStatus.ACTIVE),
             makeTask("2", TaskStatus.ACTIVE),
             makeTask("3", TaskStatus.ACTIVE)
         )
-        viewModel.showTripBanner.value = viewModel.tasks.value.filter { it.status == TaskStatus.ACTIVE }.size >= 3
+        viewModel._showTripBanner.value = viewModel._tasks.value.filter { it.status == TaskStatus.ACTIVE }.size >= 3
         assertTrue(viewModel.showTripBanner.value)
 
-        // Complete one → banner hidden
-        viewModel.tasks.value = viewModel.tasks.value.map {
+        viewModel._tasks.value = viewModel._tasks.value.map {
             if (it.id == "1") it.copy(status = TaskStatus.COMPLETED) else it
         }
-        viewModel.showTripBanner.value = viewModel.tasks.value.filter { it.status == TaskStatus.ACTIVE }.size >= 3
+        viewModel._showTripBanner.value = viewModel._tasks.value.filter { it.status == TaskStatus.ACTIVE }.size >= 3
         assertFalse(viewModel.showTripBanner.value)
     }
 
@@ -130,29 +127,27 @@ class HomeViewModelTest {
             makeTask("2", TaskStatus.ACTIVE),
             makeTask("3", TaskStatus.ACTIVE)
         )
-        viewModel.tasks.value = tasks
-        viewModel.showTripBanner.value = true
+        viewModel._tasks.value = tasks
+        viewModel._showTripBanner.value = true
 
-        // Simulate the state update that completeTask() would do
         val completedId = "1"
-        val updated = viewModel.tasks.value.map {
+        val updated = viewModel._tasks.value.map {
             if (it.id == completedId) {
                 it.copy(status = TaskStatus.COMPLETED, completedAt = java.time.Instant.now().toString())
             } else it
         }
-        viewModel.tasks.value = updated
-        viewModel.showTripBanner.value = viewModel.tasks.value.filter { it.status == TaskStatus.ACTIVE }.size >= 3
+        viewModel._tasks.value = updated
+        viewModel._showTripBanner.value = viewModel._tasks.value.filter { it.status == TaskStatus.ACTIVE }.size >= 3
 
-        assertEquals(2, viewModel.tasks.value.filter { it.status == TaskStatus.ACTIVE }.size)
+        assertEquals(2, viewModel._tasks.value.filter { it.status == TaskStatus.ACTIVE }.size)
         assertFalse(viewModel.showTripBanner.value)
     }
 
     @Test
     fun `empty task list hides trip banner`() = runTest {
         val viewModel = HomeViewModel()
-        viewModel.tasks.value = emptyList()
-        viewModel.showTripBanner.value = false
+        viewModel._tasks.value = emptyList()
+        viewModel._showTripBanner.value = false
         assertFalse(viewModel.showTripBanner.value)
     }
-}
 }

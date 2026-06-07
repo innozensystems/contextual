@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
     id("com.google.devtools.ksp")
     id("androidx.navigation.safeargs.kotlin")
 }
@@ -64,8 +65,10 @@ android {
         }
     }
 
-    tasks.named("assembleRelease").configure {
-        dependsOn("validateReleaseSecrets")
+    afterEvaluate {
+        tasks.named("assembleRelease").configure {
+            dependsOn("validateReleaseSecrets")
+        }
     }
 
     compileOptions {
@@ -94,7 +97,7 @@ dependencies {
     // Supabase
     implementation(platform("io.github.jan-tennert.supabase:bom:2.5.0"))
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:gotrue-kt")
     implementation("io.github.jan-tennert.supabase:realtime-kt")
 
     // Maps
@@ -109,6 +112,9 @@ dependencies {
 
     // Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
+
+    // Google Play Services coroutines integration
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

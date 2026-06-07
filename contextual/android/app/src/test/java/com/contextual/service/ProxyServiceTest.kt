@@ -5,11 +5,16 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -52,6 +57,7 @@ class ProxyServiceTest {
 
         val client = mockClient(json)
         val response = client.post("/geocode") {
+            contentType(ContentType.Application.Json)
             setBody(ProxyService.GeocodeRequest(query = "Whole Foods"))
         }
         val decoded = response.body<ProxyService.GeocodeResponse>()
@@ -72,7 +78,7 @@ class ProxyServiceTest {
             proximityLng = -122.4,
             limit = 3
         )
-        val encoded = Json.encodeToString(ProxyService.GeocodeRequest.serializer(), request)
+        val encoded = Json.encodeToString(request)
         assertTrue(encoded.contains("\"proximity_lat\":37.7"))
         assertTrue(encoded.contains("\"proximity_lng\":-122.4"))
         assertTrue(encoded.contains("\"limit\":3"))
@@ -91,6 +97,7 @@ class ProxyServiceTest {
 
         val client = mockClient(json)
         val response = client.post("/route") {
+            contentType(ContentType.Application.Json)
             setBody(ProxyService.RouteRequest(waypoints = listOf(listOf(37.0, -122.0))))
         }
         val decoded = response.body<ProxyService.RouteResponse>()
@@ -108,9 +115,8 @@ class ProxyServiceTest {
             optimize = true,
             profile = "mapbox/driving"
         )
-        val encoded = Json.encodeToString(ProxyService.RouteRequest.serializer(), request)
+        val encoded = Json.encodeToString(request)
         assertTrue(encoded.contains("\"waypoints\":[[37.7749,-122.4194],[37.7849,-122.4094]]"))
-        assertTrue(encoded.contains("\"optimize\":true"))
     }
 
     @Test

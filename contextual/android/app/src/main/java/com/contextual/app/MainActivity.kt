@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupActionBarWithNavController
+import com.contextual.R
 import com.contextual.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {

@@ -31,6 +31,7 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
         fun newInstance() = AddTaskBottomSheet()
+        const val REQUEST_RECORD_AUDIO = 101
     }
 
     override fun onCreateView(
@@ -162,9 +163,5 @@ class AddTaskBottomSheet : BottomSheetDialogFragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
-    }
-
-    companion object {
-        const val REQUEST_RECORD_AUDIO = 101
     }
 }

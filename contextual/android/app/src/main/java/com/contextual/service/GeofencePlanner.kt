@@ -74,10 +74,10 @@ object GeofencePlanner {
         val r = 6_371_000.0 // Earth radius in meters
         val dLat = Math.toRadians(lat2 - lat1)
         val dLng = Math.toRadians(lng2 - lng1)
-        val a = kotlin.math.sin(dLat / 2).pow(2) +
+        val a = Math.pow(kotlin.math.sin(dLat / 2), 2.0) +
                 kotlin.math.cos(Math.toRadians(lat1)) *
                 kotlin.math.cos(Math.toRadians(lat2)) *
-                kotlin.math.sin(dLng / 2).pow(2)
-        return r * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+                Math.pow(kotlin.math.sin(dLng / 2), 2.0)
+        return r * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1.0 - a))
     }
 }

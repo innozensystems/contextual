@@ -21,6 +21,7 @@ class GeofencePlannerTest {
             title = "Task $id",
             status = status,
             reminderRadiusMeters = radius,
+            locationId = if (lat != null && lng != null) "loc-$id" else null,
             locations = if (lat != null && lng != null) {
                 Location(name = "Loc $id", latitude = lat, longitude = lng)
             } else null
@@ -111,7 +112,7 @@ class GeofencePlannerTest {
     @Test
     fun `buildSpecs limits to 20 nearest when sorted by distance`() {
         val tasks = (1..25).map { i ->
-            makeTask(i.toString(), lat = Double(i) * 0.1, lng = 0.0)
+            makeTask(i.toString(), lat = i * 0.1, lng = 0.0)
         }
 
         val specs = GeofencePlanner.buildSpecs(
